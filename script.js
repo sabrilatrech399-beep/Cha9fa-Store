@@ -1,25 +1,25 @@
 const products = [
   {
     id: 1,
-    name: "300 جوهرة",
+    name: "100 جواهر",
     price: 300,
     icon: "images/diamond.png"
   },
   {
     id: 2,
-    name: "900 جوهرة",
+    name: "300 جواهر",
     price: 900,
     icon: "images/diamond.png"
   },
   {
     id: 3,
-    name: "1500 جوهرة",
+    name: "500 جواهر",
     price: 1500,
     icon: "images/diamond.png"
   },
   {
     id: 4,
-    name: "3000 جوهرة",
+    name: "1000 جواهر",
     price: 3000,
     icon: "images/diamond.png"
   }
@@ -43,8 +43,8 @@ function render(list = products) {
         ${p.price.toLocaleString()} نقطة
       </div>
 
-      <button onclick="addToCart(${p.id})">
-        إضافة إلى السلة
+      <button class="add" onclick="addToCart(${p.id})">
+        أضف إلى السلة
       </button>
     </article>
   `).join("");
@@ -66,13 +66,14 @@ function updateCart() {
     cart.length
       ? cart.map((p, i) => `
           <div class="cart-item">
-            <img src="${p.icon}" alt="${p.name}">
             <span>${p.name}</span>
-            <strong>${p.price.toLocaleString()} نقطة</strong>
-            <button onclick="removeItem(${i})">حذف</button>
+            <span>
+              ${p.price.toLocaleString()} نقطة
+              <button onclick="removeItem(${i})">✕</button>
+            </span>
           </div>
         `).join("")
-      : "<p>السلة فارغة</p>";
+      : "<p style='color:#9ca3af'>السلة فارغة.</p>";
 
   const total = cart.reduce((sum, p) => sum + p.price, 0);
 
@@ -87,12 +88,12 @@ function removeItem(i) {
 
 function openCart() {
   document.getElementById("cartPanel").classList.add("open");
-  document.getElementById("overlay").classList.add("open");
+  document.getElementById("overlay").classList.add("show");
 }
 
 function closeCart() {
   document.getElementById("cartPanel").classList.remove("open");
-  document.getElementById("overlay").classList.remove("open");
+  document.getElementById("overlay").classList.remove("show");
 }
 
 document.getElementById("cartBtn").onclick = openCart;
@@ -100,16 +101,14 @@ document.getElementById("closeCart").onclick = closeCart;
 document.getElementById("overlay").onclick = closeCart;
 
 document.getElementById("checkout").onclick = () => {
-  alert("تم تجهيز الطلب. طريقة الدفع ستضاف لاحقًا.");
+  alert("تم تجهيز الطلب. سنربط طريقة الدفع لاحقًا.");
 };
 
 search.oninput = () => {
-  const q = search.value.trim().toLowerCase();
+  const q = search.value.trim();
 
   render(
-    products.filter(p =>
-      p.name.toLowerCase().includes(q)
-    )
+    products.filter(p => p.name.includes(q))
   );
 };
 

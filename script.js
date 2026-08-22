@@ -1,23 +1,18 @@
-// ===============================
+// ================================
 // SUPABASE
-// ===============================
+// ================================
 
 const SUPABASE_URL = "https://dopjzxjhyrgnvrpuboiv.supabase.co";
+const SUPABASE_KEY = "sb_publishable_OqmrAdrqA2RnU2mCvJhaOQ_38nZsNlm";
 
-const SUPABASE_KEY =
-  "sb_publishable_OqmrAdrqA2RnU2mCvJhaOQ_38nZsNlm";
-
-const { createClient } = supabase;
-
-const supabaseClient = createClient(
+const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
   SUPABASE_KEY
 );
 
-
-// ===============================
-// PRODUCTS
-// ===============================
+// ================================
+// المنتجات
+// ================================
 
 const products = [
   {
@@ -46,231 +41,114 @@ const products = [
   }
 ];
 
-
-// ===============================
-// VARIABLES
-// ===============================
-
 let cart = [];
-let currentUser = null;
-let userPoints = 0;
+let user = null;
+let balance = 0;
 
-
-// ===============================
-// ELEMENTS
-// ===============================
+// ================================
+// عناصر الصفحة
+// ================================
 
 const grid = document.getElementById("productsGrid");
 const search = document.getElementById("search");
 
+// ================================
+// إنشاء حساب ضيف
+// ================================
 
-// ===============================
-// AUTH
-// ===============================
-
-async function initAuth() {
-
+async function initGuest() {
   try {
+    const { data: sessionData } =
+      await supabaseClient.auth.getSession();
 
-    // محاولة الحصول على جلسة موجودة
-    const {
-      data: {
-        session
+    if (sessionData && sessionData.session) {
+      user = sessionData.session.user;
+    } else {
+      const { data, error } =
+        await supabaseClient.auth.signInAnonymously();
+
+      if (error) {
+        console.error("Guest login error:", error);
+        return;
       }
-    } = await supabaseClient.auth.getSession();
 
-
-    if (session && session.user) {
-
-      currentUser = session.user;
-
-      await loadBalance();
-
-      return;
+      user = data.user;
     }
 
-
-    // إنشاء حساب ضيف جديد
-    const {
-      data,
-      error
-    } = await supabaseClient.auth.signInAnonymously();
-
-
-    if (error) {
-      console.error("خطأ في تسجيل دخول الضيف:", error);
-
-      showUserMessage(
-        "تعذر تسجيل الدخول كضيف"
-      );
-
-      return;
-    }
-
-
-    if (data && data.user) {
-
-      currentUser = data.user;
-
-      await loadBalance();
-    }
+    await loadBalance();
 
   } catch (error) {
-
-    console.error(error);
-
-    showUserMessage(
-      "حدث خطأ أثناء الاتصال بالحساب"
-    );
+    console.error("Initialization error:", error);
   }
 }
 
-
-// ===============================
-// LOAD BALANCE
-// ===============================
+// ================================
+// جلب الرصيد الحقيقي
+// ================================
 
 async function loadBalance() {
-
-  if (!currentUser) {
-    return;
-  }
-
+  if (!user) return;
 
   try {
-
-    const {
-      data,
-      error
-    } = await supabaseClient
+    const { data, error } = await supabaseClient
       .from("balances")
       .select("points")
-      .eq("user_id", currentUser.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
-
     if (error) {
-
-      console.error(
-        "خطأ في قراءة الرصيد:",
-        error
-      );
-
-      userPoints = 0;
-
-      render();
-
-      return;
-    }
-
-
-    if (data) {
-
-      userPoints = Number(data.points) || 0;
-
+      console.error("Balance error:", error);
+      balance = 0;
     } else {
-
-      // إذا لم يوجد سجل للضيف
-      // ننشئ له رصيدًا صفرًا
-
-      const {
-        error: insertError
-      } = await supabaseClient
-        .from("balances")
-        .insert({
-          user_id: currentUser.id,
-          points: 0
-        });
-
-
-      if (insertError) {
-
-        console.error(
-          "خطأ في إنشاء الرصيد:",
-          insertError
-        );
-
-      }
-
-      userPoints = 0;
+      balance = data ? Number(data.points) : 0;
     }
-
 
     updateBalanceUI();
-
     render();
-
+    updateCart();
 
   } catch (error) {
-
-    console.error(error);
-
-    userPoints = 0;
-
-    updateBalanceUI();
-
-    render();
+    console.error("Load balance error:", error);
   }
 }
 
-
-// ===============================
-// BALANCE UI
-// ===============================
+// ================================
+// عرض الرصيد
+// ================================
 
 function updateBalanceUI() {
 
   const balanceElements = [
-
-    document.getElementById("userPoints"),
-
-    document.getElementById("pointsBalance"),
-
     document.getElementById("balance"),
-
-    document.getElementById("points")
-
+    document.getElementById("pointsBalance"),
+    document.getElementById("userPoints")
   ];
 
-
   balanceElements.forEach(element => {
-
     if (element) {
-
       element.textContent =
-        userPoints.toLocaleString() + " نقطة";
-
+        balance.toLocaleString() + " نقطة";
     }
-
   });
 }
 
-
-// ===============================
-// RENDER PRODUCTS
-// ===============================
+// ================================
+// عرض المنتجات
+// ================================
 
 function render(list = products) {
 
-  if (!grid) {
-    return;
-  }
-
+  if (!grid) return;
 
   grid.innerHTML = list.map(p => {
 
-    const canBuy =
-      userPoints >= p.price;
-
+    const canBuy = balance >= p.price;
 
     return `
       <article class="card">
 
         <div class="product-img">
-          <img
-            src="${p.icon}"
-            alt="${p.name}"
-          >
+          <img src="${p.icon}" alt="${p.name}">
         </div>
 
         <h3>${p.name}</h3>
@@ -281,14 +159,10 @@ function render(list = products) {
 
         <button
           class="add ${canBuy ? "available" : "disabled"}"
-          ${canBuy ? "" : "disabled"}
           onclick="addToCart(${p.id})"
+          ${canBuy ? "" : "disabled"}
         >
-          ${
-            canBuy
-              ? "أضف إلى السلة"
-              : "نقاط غير كافية"
-          }
+          ${canBuy ? "أضف إلى السلة" : "نقاط غير كافية"}
         </button>
 
       </article>
@@ -297,58 +171,46 @@ function render(list = products) {
   }).join("");
 }
 
-
-// ===============================
-// ADD TO CART
-// ===============================
+// ================================
+// إضافة للسلة
+// ================================
 
 function addToCart(id) {
 
-  const product =
-    products.find(p => p.id === id);
+  const product = products.find(p => p.id === id);
 
+  if (!product) return;
 
-  if (!product) {
-    return;
-  }
-
-
-  // التأكد من الرصيد قبل الإضافة
-  if (userPoints < product.price) {
-
+  if (balance < product.price) {
     alert(
-      `رصيدك غير كافٍ.\n\nرصيدك: ${userPoints.toLocaleString()} نقطة\nالمطلوب: ${product.price.toLocaleString()} نقطة`
+      `رصيدك غير كافٍ.\n\nرصيدك: ${balance.toLocaleString()} نقطة\nالسعر: ${product.price.toLocaleString()} نقطة`
     );
-
     return;
   }
-
 
   cart.push(product);
 
   updateCart();
 }
 
-
-// ===============================
-// UPDATE CART
-// ===============================
+// ================================
+// تحديث السلة
+// ================================
 
 function updateCart() {
 
   const cartCount =
     document.getElementById("cartCount");
 
-  if (cartCount) {
-
-    cartCount.textContent =
-      cart.length;
-  }
-
-
   const cartItems =
     document.getElementById("cartItems");
 
+  const cartTotal =
+    document.getElementById("cartTotal");
+
+  if (cartCount) {
+    cartCount.textContent = cart.length;
+  }
 
   if (cartItems) {
 
@@ -379,29 +241,23 @@ function updateCart() {
         : "<p style='color:#9ca3af'>السلة فارغة.</p>";
   }
 
-
   const total =
     cart.reduce(
       (sum, p) => sum + p.price,
       0
     );
 
-
-  const cartTotal =
-    document.getElementById("cartTotal");
-
-
   if (cartTotal) {
-
     cartTotal.textContent =
       total.toLocaleString() + " نقطة";
   }
+
+  updateCheckoutButton();
 }
 
-
-// ===============================
-// REMOVE ITEM
-// ===============================
+// ================================
+// حذف منتج
+// ================================
 
 function removeItem(i) {
 
@@ -410,117 +266,213 @@ function removeItem(i) {
   updateCart();
 }
 
-
-// ===============================
-// CART OPEN / CLOSE
-// ===============================
+// ================================
+// فتح السلة
+// ================================
 
 function openCart() {
 
-  document
-    .getElementById("cartPanel")
-    ?.classList.add("open");
+  const panel =
+    document.getElementById("cartPanel");
 
-  document
-    .getElementById("overlay")
-    ?.classList.add("show");
+  const overlay =
+    document.getElementById("overlay");
+
+  if (panel) {
+    panel.classList.add("open");
+  }
+
+  if (overlay) {
+    overlay.classList.add("show");
+  }
 }
 
+// ================================
+// إغلاق السلة
+// ================================
 
 function closeCart() {
 
-  document
-    .getElementById("cartPanel")
-    ?.classList.remove("open");
+  const panel =
+    document.getElementById("cartPanel");
 
-  document
-    .getElementById("overlay")
-    ?.classList.remove("show");
+  const overlay =
+    document.getElementById("overlay");
+
+  if (panel) {
+    panel.classList.remove("open");
+  }
+
+  if (overlay) {
+    overlay.classList.remove("show");
+  }
 }
 
+// ================================
+// زر السلة
+// ================================
 
-document
-  .getElementById("cartBtn")
-  ?.addEventListener(
-    "click",
-    openCart
-  );
+const cartBtn =
+  document.getElementById("cartBtn");
 
+const closeCartBtn =
+  document.getElementById("closeCart");
 
-document
-  .getElementById("closeCart")
-  ?.addEventListener(
-    "click",
-    closeCart
-  );
+const overlay =
+  document.getElementById("overlay");
 
+if (cartBtn) {
+  cartBtn.onclick = openCart;
+}
 
-document
-  .getElementById("overlay")
-  ?.addEventListener(
-    "click",
-    closeCart
-  );
+if (closeCartBtn) {
+  closeCartBtn.onclick = closeCart;
+}
 
+if (overlay) {
+  overlay.onclick = closeCart;
+}
 
-// ===============================
-// CHECKOUT
-// ===============================
+// ================================
+// زر الدفع
+// ================================
 
-document
-  .getElementById("checkout")
-  ?.addEventListener(
-    "click",
-    async () => {
+function updateCheckoutButton() {
 
-      if (!currentUser) {
+  const checkout =
+    document.getElementById("checkout");
 
-        alert(
-          "لم يتم تسجيل الدخول بعد."
-        );
+  if (!checkout) return;
 
-        return;
-      }
+  const total =
+    cart.reduce(
+      (sum, p) => sum + p.price,
+      0
+    );
 
+  if (cart.length > 0 && balance >= total) {
 
-      if (!cart.length) {
+    checkout.disabled = false;
 
-        alert(
-          "السلة فارغة."
-        );
+    checkout.style.background = "#22c55e";
+    checkout.style.cursor = "pointer";
+    checkout.style.opacity = "1";
 
-        return;
-      }
+    checkout.textContent = "إتمام الطلب";
 
+  } else {
 
-      const total =
-        cart.reduce(
-          (sum, p) => sum + p.price,
-          0
-        );
+    checkout.disabled = true;
 
+    checkout.style.background = "#374151";
+    checkout.style.cursor = "not-allowed";
+    checkout.style.opacity = "0.6";
 
-      if (userPoints < total) {
+    checkout.textContent = "رصيد غير كافٍ";
+  }
+}
 
-        alert(
-          `رصيدك غير كافٍ.\n\nرصيدك: ${userPoints.toLocaleString()} نقطة\nالمطلوب: ${total.toLocaleString()} نقطة`
-        );
+// ================================
+// تنفيذ الطلب
+// ================================
 
-        return;
-      }
+async function checkout() {
 
+  if (!user) {
+    alert("لم يتم تسجيل حساب الضيف.");
+    return;
+  }
+
+  if (cart.length === 0) {
+    alert("السلة فارغة.");
+    return;
+  }
+
+  const total =
+    cart.reduce(
+      (sum, p) => sum + p.price,
+      0
+    );
+
+  if (balance < total) {
+    alert("رصيدك غير كافٍ.");
+    return;
+  }
+
+  const checkoutButton =
+    document.getElementById("checkout");
+
+  if (checkoutButton) {
+    checkoutButton.disabled = true;
+    checkoutButton.textContent = "جارٍ التنفيذ...";
+  }
+
+  try {
+
+    const newBalance =
+      balance - total;
+
+    const { error } =
+      await supabaseClient
+        .from("balances")
+        .update({
+          points: newBalance,
+          updated_at: new Date().toISOString()
+        })
+        .eq("user_id", user.id);
+
+    if (error) {
+      console.error(error);
 
       alert(
-        "الرصيد كافٍ. الخطوة التالية ستكون تنفيذ الخصم الحقيقي من Supabase."
+        "حدث خطأ أثناء تحديث الرصيد."
       );
 
+      updateCheckoutButton();
+      return;
     }
-  );
 
+    balance = newBalance;
 
-// ===============================
-// SEARCH
-// ===============================
+    cart = [];
+
+    updateBalanceUI();
+    updateCart();
+    render();
+
+    alert(
+      "تم إتمام الطلب بنجاح ✅\n\n" +
+      "تم خصم " +
+      total.toLocaleString() +
+      " نقطة من رصيدك."
+    );
+
+  } catch (error) {
+
+    console.error(error);
+
+    alert(
+      "حدث خطأ غير متوقع."
+    );
+
+    updateCheckoutButton();
+  }
+}
+
+// ================================
+// زر إتمام الطلب
+// ================================
+
+const checkoutButton =
+  document.getElementById("checkout");
+
+if (checkoutButton) {
+  checkoutButton.onclick = checkout;
+}
+
+// ================================
+// البحث
+// ================================
 
 if (search) {
 
@@ -529,66 +481,18 @@ if (search) {
     const q =
       search.value.trim();
 
-
     render(
       products.filter(p =>
         p.name.includes(q)
       )
     );
-
   };
 }
 
-
-// ===============================
-// AUTH STATE CHANGES
-// ===============================
-
-supabaseClient.auth
-  .onAuthStateChange(
-    async (event, session) => {
-
-      if (session && session.user) {
-
-        currentUser =
-          session.user;
-
-        await loadBalance();
-
-      }
-
-    }
-  );
-
-
-// ===============================
-// MESSAGE
-// ===============================
-
-function showUserMessage(message) {
-
-  console.log(message);
-
-  const element =
-    document.getElementById(
-      "userMessage"
-    );
-
-
-  if (element) {
-
-    element.textContent =
-      message;
-  }
-}
-
-
-// ===============================
-// START
-// ===============================
+// ================================
+// تشغيل الموقع
+// ================================
 
 render();
-
 updateCart();
-
-initAuth();
+initGuest();

@@ -1,8 +1,8 @@
 const products=[
- {id:1,name:"منتج تجريبي 1",price:1000,icon:"🔥"},
- {id:2,name:"منتج تجريبي 2",price:2000,icon:"⭐"},
- {id:3,name:"منتج تجريبي 3",price:3000,icon:"🎁"},
- {id:4,name:"منتج تجريبي 4",price:5000,icon:"💎"}
+ {id:1,name:"منتج تجريبي 1",price:300,icon:"🔥"},
+ {id:2,name:"منتج تجريبي 2",price:900,icon:"⭐"},
+ {id:3,name:"منتج تجريبي 3",price:1500,icon:"🎁"},
+ {id:4,name:"منتج تجريبي 4",price:3000,icon:"💎"}
 ];
 let cart=[];
 const grid=document.getElementById("productsGrid"), search=document.getElementById("search");

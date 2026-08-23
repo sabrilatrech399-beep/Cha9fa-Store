@@ -21,6 +21,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ? new URL(process.env.PUBLIC
 const ADMIN_IDS = new Set((process.env.ADMIN_KICK_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean));
 const WATCH_INGEST_SECRET = process.env.WATCH_INGEST_SECRET || '';
 const WATCH_CHANNEL_USER_ID = process.env.WATCH_CHANNEL_USER_ID || '';
+const WATCH_CHANNEL_SLUG = (process.env.WATCH_CHANNEL_SLUG || process.env.KICK_CHANNEL_SLUG || '').trim().toLowerCase();
 const WATCH_POINTS_PER_MINUTE = Number(process.env.WATCH_POINTS_PER_MINUTE || 0);
 const WATCH_MAX_MINUTES_PER_EVENT = Math.min(120, Math.max(1, Number(process.env.WATCH_MAX_MINUTES_PER_EVENT || 10)));
 const rateBuckets = new Map();
@@ -28,244 +29,44 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_LIMITS = { auth: 20, orders: 10, admin: 60, watch: 120 };
 
 app.set('trust proxy', 1);
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"], baseUri: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'none'"],
-      scriptSrc: ["'self'"], styleSrc: ["'self'"], imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"], formAction: ["'self'"],
-    },
-  },
-  crossOriginEmbedderPolicy: false,
-}));
-app.use(express.json({ limit: '20kb' }));
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) res.setHeader('Cache-Control', 'no-store');
-  next();
-});
-app.use(express.static(ROOT_DIR, { index: 'index.html' }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc:["'self'"],baseUri:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],scriptSrc:["'self'"],styleSrc:["'self'"],imgSrc:["'self'",'data:'],connectSrc:["'self'"],formAction:["'self'"] } }, crossOriginEmbedderPolicy:false }));
+app.use(express.json({ limit:'20kb' }));
+app.use((req,res,next)=>{ if(req.path.startsWith('/api/')||req.path.startsWith('/auth/')) res.setHeader('Cache-Control','no-store'); next(); });
+app.use(express.static(ROOT_DIR,{index:'index.html'}));
 
-const base64url = input => Buffer.from(input).toString('base64url');
-const randomToken = (bytes = 32) => crypto.randomBytes(bytes).toString('base64url');
-const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
-const hmac = value => crypto.createHmac('sha256', process.env.SESSION_SECRET).update(value).digest('base64url');
-const signedValue = payload => { const encoded = base64url(JSON.stringify(payload)); return `${encoded}.${hmac(encoded)}`; };
+const base64url=input=>Buffer.from(input).toString('base64url');
+const randomToken=(bytes=32)=>crypto.randomBytes(bytes).toString('base64url');
+const sha256=value=>crypto.createHash('sha256').update(value).digest('hex');
+const hmac=value=>crypto.createHmac('sha256',process.env.SESSION_SECRET).update(value).digest('base64url');
+const signedValue=payload=>{const encoded=base64url(JSON.stringify(payload));return `${encoded}.${hmac(encoded)}`;};
+function verifySignedValue(value){if(!value)return null;const [encoded,signature]=value.split('.');if(!encoded||!signature)return null;const a=Buffer.from(signature),b=Buffer.from(hmac(encoded));if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;try{return JSON.parse(Buffer.from(encoded,'base64url').toString('utf8'));}catch{return null;}}
+function parseCookies(header=''){return Object.fromEntries(header.split(';').map(p=>p.trim()).filter(Boolean).map(p=>{const i=p.indexOf('=');return i<0?[p,'']: [decodeURIComponent(p.slice(0,i)),decodeURIComponent(p.slice(i+1))];}));}
+function appendCookie(res,cookie){const existing=res.getHeader('Set-Cookie');const values=existing?(Array.isArray(existing)?existing:[existing]):[];res.setHeader('Set-Cookie',[...values,cookie]);}
+function setCookie(res,name,value,maxAge){const secure=COOKIE_SECURE?'; Secure':'';appendCookie(res,`${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; HttpOnly${secure}; SameSite=Lax`);}
+function clearCookie(res,name){const secure=COOKIE_SECURE?'; Secure':'';appendCookie(res,`${name}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`);}
+function clientIp(req){const forwarded=String(req.headers['x-forwarded-for']||'').split(',')[0].trim();return forwarded||req.socket.remoteAddress||'unknown';}
+function rateLimit(bucket,limit){return(req,res,next)=>{const key=`${bucket}:${clientIp(req)}`,now=Date.now();let item=rateBuckets.get(key);if(!item||item.resetAt<=now)item={count:0,resetAt:now+RATE_WINDOW_MS};item.count+=1;rateBuckets.set(key,item);if(item.count>limit){res.setHeader('Retry-After',Math.ceil((item.resetAt-now)/1000));return res.status(429).json({error:'RATE_LIMITED'});}next();};}
+setInterval(()=>{const now=Date.now();for(const[key,item]of rateBuckets)if(item.resetAt<=now)rateBuckets.delete(key);},RATE_WINDOW_MS).unref();
+function requireSameOrigin(req,res,next){const origin=req.headers.origin;if(!origin)return res.status(403).json({error:'ORIGIN_REQUIRED'});let expected;try{expected=PUBLIC_BASE_URL||`${req.protocol}://${req.get('host')}`;}catch{return res.status(403).json({error:'ORIGIN_REJECTED'});}if(origin!==expected)return res.status(403).json({error:'ORIGIN_REJECTED'});next();}
+function constantTimeSecretMatch(received,expected){if(!received||!expected)return false;const a=Buffer.from(received),b=Buffer.from(expected);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
+async function getSession(req){const token=parseCookies(req.headers.cookie)[SESSION_COOKIE];if(!token)return null;const{data,error}=await supabase.from('auth_sessions').select('id,store_user_id,expires_at,store_users(id,kick_user_id,kick_username,points)').eq('token_hash',sha256(token)).gt('expires_at',new Date().toISOString()).maybeSingle();if(error||!data?.store_users)return null;return{session:data,user:data.store_users};}
+async function requireSession(req,res,next){const session=await getSession(req);if(!session)return res.status(401).json({error:'AUTH_REQUIRED'});req.auth=session;next();}
+async function requireAdmin(req,res,next){const session=await getSession(req);if(!session)return res.status(401).json({error:'AUTH_REQUIRED'});if(!ADMIN_IDS.has(String(session.user.kick_user_id)))return res.status(403).json({error:'ADMIN_REQUIRED'});req.auth=session;next();}
+async function kickTokenExchange(code,verifier){const response=await fetch('https://id.kick.com/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',code,client_id:process.env.KICK_CLIENT_ID,client_secret:process.env.KICK_CLIENT_SECRET,redirect_uri:process.env.KICK_REDIRECT_URI,code_verifier:verifier})});if(!response.ok)throw new Error(`KICK_TOKEN_EXCHANGE_${response.status}`);return response.json();}
+async function kickUser(accessToken){const response=await fetch('https://api.kick.com/public/v1/users',{headers:{Authorization:`Bearer ${accessToken}`}});if(!response.ok)throw new Error(`KICK_USER_LOOKUP_${response.status}`);const body=await response.json();const candidate=Array.isArray(body?.data)?body.data[0]:body?.data||body?.user||body;const id=candidate?.user_id??candidate?.id,username=candidate?.username??candidate?.name;if(!id||!username)throw new Error('KICK_USER_RESPONSE_INVALID');return{id:String(id),username:String(username)};}
 
-function verifySignedValue(value) {
-  if (!value) return null;
-  const [encoded, signature] = value.split('.');
-  if (!encoded || !signature) return null;
-  const a = Buffer.from(signature), b = Buffer.from(hmac(encoded));
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try { return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')); } catch { return null; }
-}
-
-function parseCookies(header = '') {
-  return Object.fromEntries(header.split(';').map(p => p.trim()).filter(Boolean).map(p => {
-    const i = p.indexOf('=');
-    return i < 0 ? [p, ''] : [decodeURIComponent(p.slice(0, i)), decodeURIComponent(p.slice(i + 1))];
-  }));
-}
-
-function appendCookie(res, cookie) {
-  const existing = res.getHeader('Set-Cookie');
-  const values = existing ? (Array.isArray(existing) ? existing : [existing]) : [];
-  res.setHeader('Set-Cookie', [...values, cookie]);
-}
-function setCookie(res, name, value, maxAge) {
-  const secure = COOKIE_SECURE ? '; Secure' : '';
-  appendCookie(res, `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; HttpOnly${secure}; SameSite=Lax`);
-}
-function clearCookie(res, name) {
-  const secure = COOKIE_SECURE ? '; Secure' : '';
-  appendCookie(res, `${name}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`);
-}
-
-function clientIp(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return forwarded || req.socket.remoteAddress || 'unknown';
-}
-function rateLimit(bucket, limit) {
-  return (req, res, next) => {
-    const key = `${bucket}:${clientIp(req)}`;
-    const now = Date.now();
-    let item = rateBuckets.get(key);
-    if (!item || item.resetAt <= now) item = { count: 0, resetAt: now + RATE_WINDOW_MS };
-    item.count += 1; rateBuckets.set(key, item);
-    if (item.count > limit) {
-      res.setHeader('Retry-After', Math.ceil((item.resetAt - now) / 1000));
-      return res.status(429).json({ error: 'RATE_LIMITED' });
-    }
-    next();
-  };
-}
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, item] of rateBuckets) if (item.resetAt <= now) rateBuckets.delete(key);
-}, RATE_WINDOW_MS).unref();
-
-function requireSameOrigin(req, res, next) {
-  const origin = req.headers.origin;
-  if (!origin) return res.status(403).json({ error: 'ORIGIN_REQUIRED' });
-  let expected;
-  try { expected = PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`; } catch { return res.status(403).json({ error: 'ORIGIN_REJECTED' }); }
-  if (origin !== expected) return res.status(403).json({ error: 'ORIGIN_REJECTED' });
-  next();
-}
-
-function constantTimeSecretMatch(received, expected) {
-  if (!received || !expected) return false;
-  const a = Buffer.from(received);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
-async function getSession(req) {
-  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  if (!token) return null;
-  const { data, error } = await supabase.from('auth_sessions')
-    .select('id,store_user_id,expires_at,store_users(id,kick_user_id,kick_username,points)')
-    .eq('token_hash', sha256(token)).gt('expires_at', new Date().toISOString()).maybeSingle();
-  if (error || !data?.store_users) return null;
-  return { session: data, user: data.store_users };
-}
-
-async function requireSession(req, res, next) {
-  const session = await getSession(req);
-  if (!session) return res.status(401).json({ error: 'AUTH_REQUIRED' });
-  req.auth = session; next();
-}
-async function requireAdmin(req, res, next) {
-  const session = await getSession(req);
-  if (!session) return res.status(401).json({ error: 'AUTH_REQUIRED' });
-  if (!ADMIN_IDS.has(String(session.user.kick_user_id))) return res.status(403).json({ error: 'ADMIN_REQUIRED' });
-  req.auth = session; next();
-}
-
-async function kickTokenExchange(code, verifier) {
-  const response = await fetch('https://id.kick.com/oauth/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type:'authorization_code', code, client_id:process.env.KICK_CLIENT_ID, client_secret:process.env.KICK_CLIENT_SECRET, redirect_uri:process.env.KICK_REDIRECT_URI, code_verifier:verifier })
-  });
-  if (!response.ok) throw new Error(`KICK_TOKEN_EXCHANGE_${response.status}`);
-  return response.json();
-}
-
-async function kickUser(accessToken) {
-  const response = await fetch('https://api.kick.com/public/v1/users', { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error(`KICK_USER_LOOKUP_${response.status}`);
-  const body = await response.json();
-  const candidate = Array.isArray(body?.data) ? body.data[0] : body?.data || body?.user || body;
-  const id = candidate?.user_id ?? candidate?.id, username = candidate?.username ?? candidate?.name;
-  if (!id || !username) throw new Error('KICK_USER_RESPONSE_INVALID');
-  return { id: String(id), username: String(username) };
-}
-
-app.get('/health', (_req,res) => res.json({ ok:true }));
-
-app.get('/auth/kick', rateLimit('auth', RATE_LIMITS.auth), (_req,res) => {
-  const state = randomToken(32), verifier = randomToken(48);
-  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-  setCookie(res, OAUTH_COOKIE, signedValue({ state, verifier, exp: Date.now() + OAUTH_TTL_SECONDS * 1000 }), OAUTH_TTL_SECONDS);
-  const url = new URL('https://id.kick.com/oauth/authorize');
-  url.searchParams.set('response_type','code'); url.searchParams.set('client_id',process.env.KICK_CLIENT_ID); url.searchParams.set('redirect_uri',process.env.KICK_REDIRECT_URI); url.searchParams.set('scope','user:read'); url.searchParams.set('state',state); url.searchParams.set('code_challenge',challenge); url.searchParams.set('code_challenge_method','S256');
-  res.redirect(url.toString());
-});
-
-app.get('/auth/kick/callback', rateLimit('auth', RATE_LIMITS.auth), async (req,res) => {
-  try {
-    const oauth = verifySignedValue(parseCookies(req.headers.cookie)[OAUTH_COOKIE]);
-    clearCookie(res,OAUTH_COOKIE);
-    if (req.query.error) return res.status(400).send('Kick authorization was not completed.');
-    if (!oauth || oauth.exp < Date.now() || !req.query.state || req.query.state !== oauth.state) return res.status(400).send('Invalid OAuth state. Please try again.');
-    const code = String(req.query.code || '');
-    if (!code) return res.status(400).send('Missing authorization code. Please try again.');
-    const tokens = await kickTokenExchange(code, oauth.verifier);
-    const kickUserData = await kickUser(tokens.access_token);
-    const { data:user, error:userError } = await supabase.from('store_users').upsert({ kick_user_id:kickUserData.id, kick_username:kickUserData.username }, { onConflict:'kick_user_id' }).select('id,kick_user_id,kick_username,points').single();
-    if (userError) throw userError;
-    const sessionToken = randomToken(48);
-    await supabase.from('auth_sessions').delete().eq('store_user_id', user.id);
-    const { error:sessionError } = await supabase.from('auth_sessions').insert({ store_user_id:user.id, token_hash:sha256(sessionToken), expires_at:new Date(Date.now()+SESSION_TTL_SECONDS*1000).toISOString() });
-    if (sessionError) throw sessionError;
-    setCookie(res,SESSION_COOKIE,sessionToken,SESSION_TTL_SECONDS); res.redirect('/');
-  } catch (error) { console.error(error); res.status(502).send('تعذر تسجيل الدخول بواسطة Kick. حاول مرة أخرى.'); }
-});
-
-app.post('/auth/logout', requireSameOrigin, rateLimit('auth', RATE_LIMITS.auth), async (req,res) => {
-  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  if (token) await supabase.from('auth_sessions').delete().eq('token_hash',sha256(token));
-  clearCookie(res,SESSION_COOKIE); res.json({ ok:true });
-});
-
-app.get('/api/me', async (req,res) => {
-  const session = await getSession(req);
-  if (!session) return res.json({ authenticated:false });
-  res.json({ authenticated:true, user:session.user });
-});
-
-app.get('/api/products', async (_req,res) => {
-  const { data,error } = await supabase.from('products').select('id,name,diamonds,price_points,image_url').eq('active',true).order('diamonds');
-  if (error) return res.status(500).json({ error:'PRODUCTS_UNAVAILABLE' });
-  res.json({ products:data });
-});
-
-app.post('/api/orders', requireSameOrigin, rateLimit('orders', RATE_LIMITS.orders), requireSession, async (req,res) => {
-  const { productId,playerName,country,gameId } = req.body || {};
-  if (![productId,playerName,country,gameId].every(v => typeof v === 'string')) return res.status(400).json({ error:'INVALID_REQUEST' });
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId)) return res.status(400).json({ error:'INVALID_PRODUCT_ID' });
-  if (playerName.trim().length < 2 || playerName.trim().length > 100 || country.trim().length < 2 || country.trim().length > 80 || gameId.trim().length < 2 || gameId.trim().length > 80) return res.status(400).json({ error:'INVALID_REQUEST' });
-  const { data,error } = await supabase.rpc('spend_points_for_order',{ p_store_user_id:req.auth.user.id,p_product_id:productId,p_player_name:playerName.trim(),p_country:country.trim(),p_game_id:gameId.trim() });
-  if (error) {
-    const message=String(error.message||'');
-    if(message.includes('INSUFFICIENT_POINTS')) return res.status(409).json({error:'INSUFFICIENT_POINTS'});
-    if(message.includes('PRODUCT_NOT_FOUND')) return res.status(404).json({error:'PRODUCT_NOT_FOUND'});
-    if(message.includes('INVALID_')) return res.status(400).json({error:message.match(/INVALID_[A-Z_]+/)?.[0]||'INVALID_REQUEST'});
-    console.error(error); return res.status(500).json({error:'ORDER_FAILED'});
-  }
-  const refreshed=await getSession(req); res.status(201).json({order:data,points:refreshed?.user?.points??null});
-});
+app.get('/health',(_req,res)=>res.json({ok:true}));
+app.get('/auth/kick',rateLimit('auth',RATE_LIMITS.auth),(_req,res)=>{const state=randomToken(32),verifier=randomToken(48),challenge=crypto.createHash('sha256').update(verifier).digest('base64url');setCookie(res,OAUTH_COOKIE,signedValue({state,verifier,exp:Date.now()+OAUTH_TTL_SECONDS*1000}),OAUTH_TTL_SECONDS);const url=new URL('https://id.kick.com/oauth/authorize');url.searchParams.set('response_type','code');url.searchParams.set('client_id',process.env.KICK_CLIENT_ID);url.searchParams.set('redirect_uri',process.env.KICK_REDIRECT_URI);url.searchParams.set('scope','user:read');url.searchParams.set('state',state);url.searchParams.set('code_challenge',challenge);url.searchParams.set('code_challenge_method','S256');res.redirect(url.toString());});
+app.get('/auth/kick/callback',rateLimit('auth',RATE_LIMITS.auth),async(req,res)=>{try{const oauth=verifySignedValue(parseCookies(req.headers.cookie)[OAUTH_COOKIE]);clearCookie(res,OAUTH_COOKIE);if(req.query.error)return res.status(400).send('Kick authorization was not completed.');if(!oauth||oauth.exp<Date.now()||!req.query.state||req.query.state!==oauth.state)return res.status(400).send('Invalid OAuth state. Please try again.');const code=String(req.query.code||'');if(!code)return res.status(400).send('Missing authorization code. Please try again.');const tokens=await kickTokenExchange(code,oauth.verifier),kickUserData=await kickUser(tokens.access_token);const{data:user,error:userError}=await supabase.from('store_users').upsert({kick_user_id:kickUserData.id,kick_username:kickUserData.username},{onConflict:'kick_user_id'}).select('id,kick_user_id,kick_username,points').single();if(userError)throw userError;const sessionToken=randomToken(48);await supabase.from('auth_sessions').delete().eq('store_user_id',user.id);const{error:sessionError}=await supabase.from('auth_sessions').insert({store_user_id:user.id,token_hash:sha256(sessionToken),expires_at:new Date(Date.now()+SESSION_TTL_SECONDS*1000).toISOString()});if(sessionError)throw sessionError;setCookie(res,SESSION_COOKIE,sessionToken,SESSION_TTL_SECONDS);res.redirect('/');}catch(error){console.error(error);res.status(502).send('تعذر تسجيل الدخول بواسطة Kick. حاول مرة أخرى.');}});
+app.post('/auth/logout',requireSameOrigin,rateLimit('auth',RATE_LIMITS.auth),async(req,res)=>{const token=parseCookies(req.headers.cookie)[SESSION_COOKIE];if(token)await supabase.from('auth_sessions').delete().eq('token_hash',sha256(token));clearCookie(res,SESSION_COOKIE);res.json({ok:true});});
+app.get('/api/me',async(req,res)=>{const session=await getSession(req);if(!session)return res.json({authenticated:false});res.json({authenticated:true,user:session.user});});
+app.get('/api/products',async(_req,res)=>{const{data,error}=await supabase.from('products').select('id,name,diamonds,price_points,image_url').eq('active',true).order('diamonds');if(error)return res.status(500).json({error:'PRODUCTS_UNAVAILABLE'});res.json({products:data});});
+app.post('/api/orders',requireSameOrigin,rateLimit('orders',RATE_LIMITS.orders),requireSession,async(req,res)=>{const{productId,playerName,country,gameId}=req.body||{};if(![productId,playerName,country,gameId].every(v=>typeof v==='string'))return res.status(400).json({error:'INVALID_REQUEST'});if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId))return res.status(400).json({error:'INVALID_PRODUCT_ID'});if(playerName.trim().length<2||playerName.trim().length>100||country.trim().length<2||country.trim().length>80||gameId.trim().length<2||gameId.trim().length>80)return res.status(400).json({error:'INVALID_REQUEST'});const{data,error}=await supabase.rpc('spend_points_for_order',{p_store_user_id:req.auth.user.id,p_product_id:productId,p_player_name:playerName.trim(),p_country:country.trim(),p_game_id:gameId.trim()});if(error){const message=String(error.message||'');if(message.includes('INSUFFICIENT_POINTS'))return res.status(409).json({error:'INSUFFICIENT_POINTS'});if(message.includes('PRODUCT_NOT_FOUND'))return res.status(404).json({error:'PRODUCT_NOT_FOUND'});if(message.includes('INVALID_'))return res.status(400).json({error:message.match(/INVALID_[A-Z_]+/)?.[0]||'INVALID_REQUEST'});console.error(error);return res.status(500).json({error:'ORDER_FAILED'});}const refreshed=await getSession(req);res.status(201).json({order:data,points:refreshed?.user?.points??null});});
 
 // Private server-to-server endpoint for the future Kick watch bot.
 // It is intentionally unusable from the storefront browser.
-app.post('/internal/watch-award', rateLimit('watch', RATE_LIMITS.watch), async (req,res) => {
-  if (!constantTimeSecretMatch(String(req.get('x-watch-ingest-secret') || ''), WATCH_INGEST_SECRET)) return res.status(401).json({ error:'WATCH_AUTH_REQUIRED' });
-  if (!WATCH_INGEST_SECRET || !WATCH_CHANNEL_USER_ID || !Number.isInteger(WATCH_POINTS_PER_MINUTE) || WATCH_POINTS_PER_MINUTE < 1) return res.status(503).json({ error:'WATCH_SERVICE_NOT_CONFIGURED' });
-  const { eventKey, kickUserId, channelUserId, watchMinutes } = req.body || {};
-  const minutes = Number(watchMinutes);
-  if (typeof eventKey !== 'string' || eventKey.trim().length < 16 || eventKey.trim().length > 200) return res.status(400).json({ error:'INVALID_EVENT_KEY' });
-  if (typeof kickUserId !== 'string' || kickUserId.trim().length < 1 || kickUserId.trim().length > 100) return res.status(400).json({ error:'INVALID_KICK_USER_ID' });
-  if (String(channelUserId || '') !== String(WATCH_CHANNEL_USER_ID)) return res.status(403).json({ error:'INVALID_CHANNEL' });
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > WATCH_MAX_MINUTES_PER_EVENT) return res.status(400).json({ error:'INVALID_WATCH_MINUTES' });
-  const points = minutes * WATCH_POINTS_PER_MINUTE;
-  const { data,error } = await supabase.rpc('award_watch_points', { p_event_key:eventKey.trim(), p_kick_user_id:kickUserId.trim(), p_channel_user_id:String(channelUserId), p_watch_minutes:minutes, p_points:points });
-  if (error) {
-    const message=String(error.message||'');
-    if (message.includes('USER_NOT_FOUND')) return res.status(404).json({ error:'USER_NOT_FOUND' });
-    if (message.includes('INVALID_')) return res.status(400).json({ error:message.match(/INVALID_[A-Z_]+/)?.[0] || 'INVALID_WATCH_EVENT' });
-    console.error(error); return res.status(500).json({ error:'WATCH_AWARD_FAILED' });
-  }
-  const row = Array.isArray(data) ? data[0] : data;
-  res.status(row?.awarded ? 201 : 200).json({ awarded:Boolean(row?.awarded), points:Number(row?.new_points || 0), eventId:row?.event_id || null });
-});
+app.post('/internal/watch-award',rateLimit('watch',RATE_LIMITS.watch),async(req,res)=>{if(!constantTimeSecretMatch(String(req.get('x-watch-ingest-secret')||''),WATCH_INGEST_SECRET))return res.status(401).json({error:'WATCH_AUTH_REQUIRED'});if(!WATCH_INGEST_SECRET||!WATCH_CHANNEL_USER_ID||!WATCH_CHANNEL_SLUG||!Number.isInteger(WATCH_POINTS_PER_MINUTE)||WATCH_POINTS_PER_MINUTE<1)return res.status(503).json({error:'WATCH_SERVICE_NOT_CONFIGURED'});const{eventKey,kickUserId,channelUserId,watchMinutes}=req.body||{};const minutes=Number(watchMinutes);if(typeof eventKey!=='string'||eventKey.trim().length<16||eventKey.trim().length>200)return res.status(400).json({error:'INVALID_EVENT_KEY'});if(typeof kickUserId!=='string'||kickUserId.trim().length<1||kickUserId.trim().length>100)return res.status(400).json({error:'INVALID_KICK_USER_ID'});if(String(channelUserId||'')!==String(WATCH_CHANNEL_USER_ID))return res.status(403).json({error:'INVALID_CHANNEL'});if(!Number.isInteger(minutes)||minutes<1||minutes>WATCH_MAX_MINUTES_PER_EVENT)return res.status(400).json({error:'INVALID_WATCH_MINUTES'});const points=minutes*WATCH_POINTS_PER_MINUTE;const{data,error}=await supabase.rpc('grant_watch_points',{p_kick_user_id:kickUserId.trim(),p_channel_slug:WATCH_CHANNEL_SLUG,p_event_key:eventKey.trim(),p_points:points});if(error){const message=String(error.message||'');if(message.includes('USER_NOT_FOUND'))return res.status(404).json({error:'USER_NOT_FOUND'});if(message.includes('CHANNEL_NOT_ALLOWED'))return res.status(403).json({error:'CHANNEL_NOT_ALLOWED'});if(message.includes('INVALID_'))return res.status(400).json({error:message.match(/INVALID_[A-Z_]+/)?.[0]||'INVALID_WATCH_EVENT'});console.error(error);return res.status(500).json({error:'WATCH_AWARD_FAILED'});}res.status(201).json({awarded:true,pointsAdded:points,newPoints:Number(data||0)});});
 
-app.get('/api/admin/overview', requireAdmin, async (_req,res) => {
-  const [{data:users,error:usersError},{data:orders,error:ordersError},{data:ledger,error:ledgerError},{data:watchEvents,error:watchError}] = await Promise.all([
-    supabase.from('store_users').select('id,kick_user_id,kick_username,points,created_at,updated_at').order('points',{ascending:false}),
-    supabase.from('orders').select('id,store_user_id,product_id,diamonds,price_points,player_name,country,game_id,status,points_before,points_after,created_at').order('created_at',{ascending:false}).limit(500),
-    supabase.from('point_ledger').select('id,store_user_id,direction,amount,source,order_id,reason,created_at').order('created_at',{ascending:false}).limit(1000),
-    supabase.from('watch_events').select('id,event_key,store_user_id,kick_user_id,channel_user_id,watch_minutes,points_awarded,created_at').order('created_at',{ascending:false}).limit(1000)
-  ]);
-  if(usersError||ordersError||ledgerError||watchError) return res.status(500).json({error:'ADMIN_DATA_UNAVAILABLE'});
-  res.json({users,orders,ledger,watchEvents});
-});
-
-app.post('/api/admin/orders/:orderId/complete', requireSameOrigin, rateLimit('admin', RATE_LIMITS.admin), requireAdmin, async (req,res) => {
-  const orderId = String(req.params.orderId || '');
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) return res.status(400).json({ error:'INVALID_ORDER_ID' });
-  const { data,error } = await supabase.from('orders').update({ status:'completed' }).eq('id',orderId).eq('status','pending').select('id,status').maybeSingle();
-  if (error) return res.status(500).json({ error:'ORDER_UPDATE_FAILED' });
-  if (!data) return res.status(409).json({ error:'ORDER_NOT_PENDING' });
-  res.json({ order:data });
-});
-
-app.listen(PORT, () => console.log(`Cha9fa Store server listening on ${PORT}`));
+app.get('/api/admin/overview',requireAdmin,async(_req,res)=>{const[{data:users,error:usersError},{data:orders,error:ordersError},{data:ledger,error:ledgerError},{data:watchEvents,error:watchError}]=await Promise.all([supabase.from('store_users').select('id,kick_user_id,kick_username,points,created_at,updated_at').order('points',{ascending:false}),supabase.from('orders').select('id,store_user_id,product_id,diamonds,price_points,player_name,country,game_id,status,points_before,points_after,created_at').order('created_at',{ascending:false}).limit(500),supabase.from('point_ledger').select('id,store_user_id,direction,amount,source,order_id,reason,created_at').order('created_at',{ascending:false}).limit(1000),supabase.from('watch_events').select('id,event_key,store_user_id,channel_slug,points,created_at').order('created_at',{ascending:false}).limit(1000)]);if(usersError||ordersError||ledgerError||watchError)return res.status(500).json({error:'ADMIN_DATA_UNAVAILABLE'});res.json({users,orders,ledger,watchEvents});});
+app.post('/api/admin/orders/:orderId/complete',requireSameOrigin,rateLimit('admin',RATE_LIMITS.admin),requireAdmin,async(req,res)=>{const orderId=String(req.params.orderId||'');if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId))return res.status(400).json({error:'INVALID_ORDER_ID'});const{data,error}=await supabase.from('orders').update({status:'completed'}).eq('id',orderId).eq('status','pending').select('id,status').maybeSingle();if(error)return res.status(500).json({error:'ORDER_UPDATE_FAILED'});if(!data)return res.status(409).json({error:'ORDER_NOT_PENDING'});res.json({order:data});});
+app.listen(PORT,()=>console.log(`Cha9fa Store server listening on ${PORT}`));

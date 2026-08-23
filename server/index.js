@@ -22,6 +22,10 @@ const ADMIN_IDS = new Set((process.env.ADMIN_KICK_USER_IDS || '').split(',').map
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: '20kb' }));
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.use(express.static(ROOT_DIR, { index: 'index.html' }));
 
 const base64url = input => Buffer.from(input).toString('base64url');
@@ -113,7 +117,9 @@ app.get('/auth/kick/callback', async (req,res) => {
     clearCookie(res,OAUTH_COOKIE);
     if (req.query.error) return res.status(400).send('Kick authorization was not completed.');
     if (!oauth || oauth.exp < Date.now() || !req.query.state || req.query.state !== oauth.state) return res.status(400).send('Invalid OAuth state. Please try again.');
-    const tokens = await kickTokenExchange(String(req.query.code || ''), oauth.verifier);
+    const code = String(req.query.code || '');
+    if (!code) return res.status(400).send('Missing authorization code. Please try again.');
+    const tokens = await kickTokenExchange(code, oauth.verifier);
     const kickUserData = await kickUser(tokens.access_token);
     const { data:user, error:userError } = await supabase.from('store_users').upsert({ kick_user_id:kickUserData.id, kick_username:kickUserData.username }, { onConflict:'kick_user_id' }).select('id,kick_user_id,kick_username,points').single();
     if (userError) throw userError;
@@ -163,6 +169,15 @@ app.get('/api/admin/overview', requireAdmin, async (_req,res) => {
   ]);
   if(usersError||ordersError) return res.status(500).json({error:'ADMIN_DATA_UNAVAILABLE'});
   res.json({users,orders});
+});
+
+app.post('/api/admin/orders/:orderId/complete', requireAdmin, async (req,res) => {
+  const orderId = String(req.params.orderId || '');
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) return res.status(400).json({ error:'INVALID_ORDER_ID' });
+  const { data,error } = await supabase.from('orders').update({ status:'completed' }).eq('id',orderId).eq('status','pending').select('id,status').maybeSingle();
+  if (error) return res.status(500).json({ error:'ORDER_UPDATE_FAILED' });
+  if (!data) return res.status(409).json({ error:'ORDER_NOT_PENDING' });
+  res.json({ order:data });
 });
 
 app.listen(PORT, () => console.log(`Cha9fa Store server listening on ${PORT}`));

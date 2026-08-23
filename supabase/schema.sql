@@ -92,6 +92,13 @@ alter table public.products enable row level security;
 alter table public.point_ledger enable row level security;
 alter table public.orders enable row level security;
 
+-- The browser never receives database access to private store data.
+revoke all on table public.store_users from anon, authenticated;
+revoke all on table public.auth_sessions from anon, authenticated;
+revoke all on table public.point_ledger from anon, authenticated;
+revoke all on table public.orders from anon, authenticated;
+revoke all on table public.products from anon, authenticated;
+
 create policy "products_public_read_active"
 on public.products for select
 using (active = true);

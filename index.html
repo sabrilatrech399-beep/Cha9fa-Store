@@ -5,6 +5,224 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cha9fa Store</title>
   <link rel="stylesheet" href="style.css">
+
+  <style>
+    /* ===== Order form ===== */
+    .order-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .order-modal.show {
+      display: flex;
+    }
+
+    .order-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, .72);
+      backdrop-filter: blur(5px);
+    }
+
+    .order-modal-card {
+      position: relative;
+      width: min(520px, 100%);
+      max-height: min(720px, 92vh);
+      overflow-y: auto;
+      background: #111827;
+      border: 1px solid rgba(255, 255, 255, .09);
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, .5);
+    }
+
+    .order-modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .order-modal-head h2 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    .order-modal-head p {
+      margin: 0;
+      color: #9ca3af;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .order-close {
+      width: 40px;
+      height: 40px;
+      flex: 0 0 40px;
+      border: 0;
+      border-radius: 12px;
+      background: #1f2937;
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .order-close:hover {
+      background: #374151;
+    }
+
+    .order-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .order-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .order-field label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f3f4f6;
+    }
+
+    .order-field label span {
+      color: #ef4444;
+    }
+
+    .order-field input,
+    .order-field select {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 50px;
+      border: 1px solid #374151;
+      border-radius: 13px;
+      background: #0b1220;
+      color: #fff;
+      padding: 0 14px;
+      outline: none;
+      font: inherit;
+    }
+
+    .order-field input:focus,
+    .order-field select:focus {
+      border-color: #8cff4d;
+      box-shadow: 0 0 0 3px rgba(140, 255, 77, .10);
+    }
+
+    .order-field input::placeholder {
+      color: #6b7280;
+    }
+
+    .order-help {
+      color: #9ca3af;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .order-summary {
+      margin-top: 4px;
+      padding: 15px;
+      border-radius: 14px;
+      background: #0b1220;
+      border: 1px solid rgba(255, 255, 255, .06);
+    }
+
+    .order-summary-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #d1d5db;
+      font-size: 14px;
+    }
+
+    .order-summary-row + .order-summary-row {
+      margin-top: 8px;
+    }
+
+    .order-summary-total {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #273244;
+      font-size: 17px;
+      font-weight: 800;
+      color: #8cff4d;
+    }
+
+    .order-error {
+      display: none;
+      padding: 11px 13px;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, .10);
+      border: 1px solid rgba(239, 68, 68, .25);
+      color: #fca5a5;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .order-error.show {
+      display: block;
+    }
+
+    .order-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .order-actions button {
+      min-height: 50px;
+      border-radius: 13px;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .order-cancel {
+      border: 1px solid #374151;
+      background: #1f2937;
+      color: #fff;
+    }
+
+    .order-submit {
+      border: 0;
+      background: #8cff4d;
+      color: #071006;
+    }
+
+    .order-submit:hover {
+      filter: brightness(1.05);
+    }
+
+    .order-submit:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 520px) {
+      .order-modal {
+        padding: 10px;
+      }
+
+      .order-modal-card {
+        border-radius: 18px;
+        padding: 18px;
+      }
+
+      .order-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body>
   <header class="header">
@@ -34,14 +252,349 @@
   <div id="cartPanel" class="cart-panel">
     <div class="cart-head">
       <h2>سلة المشتريات</h2>
-      <button id="closeCart">✕</button>
+      <button id="closeCart" type="button">✕</button>
     </div>
     <div id="cartItems"></div>
-    <div class="cart-total">المجموع: <strong id="cartTotal">0 دج</strong></div>
-    <button id="checkout" class="primary full">إتمام الطلب</button>
+    <div class="cart-total">المجموع: <strong id="cartTotal">0 نقطة</strong></div>
+    <button id="checkout" class="primary full" type="button">إتمام الطلب</button>
   </div>
 
   <div id="overlay" class="overlay"></div>
+
+  <!-- نافذة بيانات اللاعب -->
+  <div id="orderModal" class="order-modal" aria-hidden="true">
+    <div id="orderModalBackdrop" class="order-modal-backdrop"></div>
+
+    <section class="order-modal-card" role="dialog" aria-modal="true" aria-labelledby="orderTitle">
+      <div class="order-modal-head">
+        <div>
+          <h2 id="orderTitle">بيانات الاستلام</h2>
+          <p>أدخل معلومات حساب اللعبة بدقة حتى يتم تنفيذ طلبك بشكل صحيح.</p>
+        </div>
+
+        <button id="orderClose" class="order-close" type="button" aria-label="إغلاق">✕</button>
+      </div>
+
+      <form id="orderForm" class="order-form" novalidate>
+        <div class="order-field">
+          <label for="playerName">اسم اللاعب <span>*</span></label>
+          <input
+            id="playerName"
+            name="playerName"
+            type="text"
+            autocomplete="nickname"
+            maxlength="100"
+            placeholder="مثال: Cha9fa"
+            required
+          >
+          <div class="order-help">اكتب اسم اللاعب كما يظهر داخل اللعبة.</div>
+        </div>
+
+        <div class="order-field">
+          <label for="country">الدولة <span>*</span></label>
+          <select id="country" name="country" required>
+            <option value="">اختر الدولة</option>
+            <option value="الجزائر">الجزائر</option>
+            <option value="المغرب">المغرب</option>
+            <option value="تونس">تونس</option>
+            <option value="ليبيا">ليبيا</option>
+            <option value="مصر">مصر</option>
+            <option value="موريتانيا">موريتانيا</option>
+            <option value="السعودية">السعودية</option>
+            <option value="الإمارات">الإمارات</option>
+            <option value="قطر">قطر</option>
+            <option value="الكويت">الكويت</option>
+            <option value="البحرين">البحرين</option>
+            <option value="عُمان">عُمان</option>
+            <option value="الأردن">الأردن</option>
+            <option value="العراق">العراق</option>
+            <option value="فلسطين">فلسطين</option>
+            <option value="دولة أخرى">دولة أخرى</option>
+          </select>
+        </div>
+
+        <div id="otherCountryField" class="order-field" style="display:none;">
+          <label for="otherCountry">اسم الدولة <span>*</span></label>
+          <input
+            id="otherCountry"
+            name="otherCountry"
+            type="text"
+            maxlength="80"
+            placeholder="اكتب اسم الدولة"
+          >
+        </div>
+
+        <div class="order-field">
+          <label for="gameId">ID اللعبة <span>*</span></label>
+          <input
+            id="gameId"
+            name="gameId"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            maxlength="80"
+            placeholder="أدخل ID حسابك في اللعبة"
+            required
+          >
+          <div class="order-help">تأكد من الـ ID قبل إرسال الطلب، لأن تنفيذ الطلب يعتمد عليه.</div>
+        </div>
+
+        <div class="order-summary">
+          <div class="order-summary-row">
+            <span>عدد المنتجات</span>
+            <strong id="orderItemCount">0</strong>
+          </div>
+          <div class="order-summary-row order-summary-total">
+            <span>إجمالي النقاط</span>
+            <strong id="orderTotal">0 نقطة</strong>
+          </div>
+        </div>
+
+        <div id="orderError" class="order-error"></div>
+
+        <div class="order-actions">
+          <button id="orderCancel" class="order-cancel" type="button">إلغاء</button>
+          <button id="orderSubmit" class="order-submit" type="submit">تأكيد الطلب</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
   <script src="script.js"></script>
+
+  <script>
+    /*
+      استبدال زر checkout القديم بنموذج احترافي.
+      لا نستخدم prompt أو confirm هنا.
+    */
+    (() => {
+      "use strict";
+
+      const $ = (id) => document.getElementById(id);
+
+      function formatPoints(value) {
+        return `${Number(value || 0).toLocaleString("ar-DZ")} نقطة`;
+      }
+
+      function getCart() {
+        try {
+          const cart = JSON.parse(
+            localStorage.getItem("cha9fa_cart") || "[]"
+          );
+          return Array.isArray(cart) ? cart : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function setError(message) {
+        const box = $("orderError");
+        if (!box) return;
+
+        box.textContent = message || "";
+        box.classList.toggle("show", Boolean(message));
+      }
+
+      function updateOrderSummary() {
+        const cart = getCart();
+        const total = cart.reduce(
+          (sum, product) => sum + Number(product?.price_points || 0),
+          0
+        );
+
+        if ($("orderItemCount")) {
+          $("orderItemCount").textContent = cart.length;
+        }
+
+        if ($("orderTotal")) {
+          $("orderTotal").textContent = formatPoints(total);
+        }
+      }
+
+      function openOrderModal() {
+        const cart = getCart();
+
+        if (!cart.length) {
+          alert("السلة فارغة.");
+          return;
+        }
+
+        setError("");
+        updateOrderSummary();
+
+        $("orderModal")?.classList.add("show");
+        $("orderModal")?.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+
+        setTimeout(() => $("playerName")?.focus(), 50);
+      }
+
+      function closeOrderModal() {
+        $("orderModal")?.classList.remove("show");
+        $("orderModal")?.setAttribute("aria-hidden", "true");
+        document.body.style.overflow = "";
+        setError("");
+      }
+
+      async function createOrders(event) {
+        event.preventDefault();
+        setError("");
+
+        const submit = $("orderSubmit");
+        const playerName = $("playerName")?.value.trim() || "";
+        const selectedCountry = $("country")?.value || "";
+        const otherCountry = $("otherCountry")?.value.trim() || "";
+        const gameId = $("gameId")?.value.trim() || "";
+
+        const country =
+          selectedCountry === "دولة أخرى"
+            ? otherCountry
+            : selectedCountry;
+
+        if (playerName.length < 2 || playerName.length > 100) {
+          setError("يرجى إدخال اسم لاعب صحيح (من 2 إلى 100 حرف).");
+          $("playerName")?.focus();
+          return;
+        }
+
+        if (country.length < 2 || country.length > 80) {
+          setError("يرجى اختيار الدولة أو إدخال اسم دولة صحيح.");
+          $("country")?.focus();
+          return;
+        }
+
+        if (gameId.length < 2 || gameId.length > 80) {
+          setError("يرجى إدخال ID اللعبة بشكل صحيح.");
+          $("gameId")?.focus();
+          return;
+        }
+
+        const cart = getCart();
+
+        if (!cart.length) {
+          closeOrderModal();
+          alert("السلة فارغة.");
+          return;
+        }
+
+        submit.disabled = true;
+        submit.textContent = "جاري إرسال الطلب...";
+
+        let completed = 0;
+
+        try {
+          const meResponse = await fetch("/api/me", {
+            method: "GET",
+            credentials: "same-origin"
+          });
+
+          const me = await meResponse.json().catch(() => ({}));
+
+          if (!me.authenticated) {
+            window.location.href = "/auth/kick";
+            return;
+          }
+
+          for (const product of cart) {
+            const response = await fetch("/api/orders", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                productId: String(product.id),
+                playerName,
+                country,
+                gameId
+              })
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+              if (data.error === "INSUFFICIENT_POINTS") {
+                throw new Error("رصيد النقاط غير كافٍ لإتمام الطلب.");
+              }
+
+              if (data.error === "PRODUCT_NOT_FOUND") {
+                throw new Error(`المنتج غير موجود: ${product.name || "المنتج"}`);
+              }
+
+              if (data.error === "AUTH_REQUIRED") {
+                window.location.href = "/auth/kick";
+                return;
+              }
+
+              throw new Error("حدث خطأ أثناء إنشاء الطلب. حاول مرة أخرى.");
+            }
+
+            completed++;
+          }
+
+          localStorage.removeItem("cha9fa_cart");
+          closeOrderModal();
+
+          alert("تم إنشاء الطلب بنجاح ✅");
+          window.location.reload();
+
+        } catch (error) {
+          console.error("Order form:", error);
+
+          if (completed > 0) {
+            const remaining = cart.slice(completed);
+            localStorage.setItem("cha9fa_cart", JSON.stringify(remaining));
+          }
+
+          setError(error.message || "تعذر إنشاء الطلب.");
+        } finally {
+          submit.disabled = false;
+          submit.textContent = "تأكيد الطلب";
+        }
+      }
+
+      function setup() {
+        const oldCheckout = $("checkout");
+
+        if (oldCheckout) {
+          const newCheckout = oldCheckout.cloneNode(true);
+          oldCheckout.replaceWith(newCheckout);
+          newCheckout.addEventListener("click", openOrderModal);
+        }
+
+        $("orderForm")?.addEventListener("submit", createOrders);
+        $("orderClose")?.addEventListener("click", closeOrderModal);
+        $("orderCancel")?.addEventListener("click", closeOrderModal);
+        $("orderModalBackdrop")?.addEventListener("click", closeOrderModal);
+
+        $("country")?.addEventListener("change", () => {
+          const other = $("otherCountryField");
+          const input = $("otherCountry");
+          const isOther = $("country").value === "دولة أخرى";
+
+          if (other) {
+            other.style.display = isOther ? "grid" : "none";
+          }
+
+          if (input) {
+            input.required = isOther;
+            if (!isOther) input.value = "";
+          }
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && $("orderModal")?.classList.contains("show")) {
+            closeOrderModal();
+          }
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", setup);
+      } else {
+        setup();
+      }
+    })();
+  </script>
 </body>
 </html>

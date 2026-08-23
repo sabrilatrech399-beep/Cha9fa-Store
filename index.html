@@ -1,47 +1,63 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Cha9fa Store</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="header">
-    <div class="brand">Cha9fa <span>Store</span></div>
-    <button id="cartBtn" class="cart-btn">🛒 السلة <b id="cartCount">0</b></button>
+  <header class="topbar">
+    <a class="brand" href="./">Cha9fa <span>Store</span></a>
+    <div class="account" id="accountArea"></div>
   </header>
 
   <main>
     <section class="hero">
       <div>
-        <p class="badge">متجر Cha9fa</p>
-        <h1>كل ما تحتاجه<br><span>في مكان واحد</span></h1>
-        <p class="hero-text">متجر سريع وبسيط لعرض منتجاتك واستقبال الطلبات.</p>
-        <a href="#products" class="primary">تصفح المنتجات</a>
+        <div class="badge">متجر Cha9fa الرسمي</div>
+        <h1>استبدل نقاطك<br><span>بجواهر فري فاير</span></h1>
+        <p>النقاط تُحتسب من مشاهدة البث فقط. سجّل دخولك بحساب Kick لترى رصيدك وتستبدله مباشرة.</p>
+        <a class="hero-btn" href="#products">عرض الباقات</a>
       </div>
+      <div class="hero-diamond"><img src="images/diamond.png" alt="جوهرة"></div>
+    </section>
+
+    <section class="wallet" id="wallet">
+      <div>
+        <span class="muted">رصيد نقاطك</span>
+        <strong id="points">—</strong>
+      </div>
+      <div class="wallet-note" id="walletNote">سجّل الدخول بحساب Kick لمعرفة رصيدك.</div>
     </section>
 
     <section class="section" id="products">
-      <div class="section-head">
-        <h2>المنتجات</h2>
-        <input id="search" type="search" placeholder="ابحث عن منتج...">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">الباقات</span>
+          <h2>اختر عدد الجواهر</h2>
+        </div>
       </div>
-      <div id="productsGrid" class="grid"></div>
+      <div id="productsGrid" class="products-grid"></div>
     </section>
   </main>
 
-  <div id="cartPanel" class="cart-panel">
-    <div class="cart-head">
-      <h2>سلة المشتريات</h2>
-      <button id="closeCart">✕</button>
-    </div>
-    <div id="cartItems"></div>
-    <div class="cart-total">المجموع: <strong id="cartTotal">0 دج</strong></div>
-    <button id="checkout" class="primary full">إتمام الطلب</button>
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="close" id="closeModal" aria-label="إغلاق">×</button>
+      <span class="eyebrow">تأكيد الاستبدال</span>
+      <h2 id="modalTitle">—</h2>
+      <p class="modal-price" id="modalPrice">—</p>
+      <form id="orderForm">
+        <label>اسمك في اللعبة<input name="playerName" maxlength="100" required autocomplete="name"></label>
+        <label>الدولة<input name="country" maxlength="80" required autocomplete="country-name"></label>
+        <label>ID اللعبة<input name="gameId" maxlength="80" required inputmode="text"></label>
+        <button class="submit" type="submit" id="submitOrder">تأكيد الاستبدال</button>
+      </form>
+      <p class="form-error" id="formError" hidden></p>
+    </section>
   </div>
 
-  <div id="overlay" class="overlay"></div>
-  <script src="script.js"></script>
+  <script src="script.js" defer></script>
 </body>
 </html>

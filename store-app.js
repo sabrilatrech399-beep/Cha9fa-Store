@@ -33,7 +33,10 @@
     area.innerHTML = `<div class="user-pill"><div><strong>${escapeHtml(u.kick_username)}</strong><small>حساب Kick</small></div><button class="logout" id="logout">خروج</button></div>`;
     $('points').textContent = Number(u.points).toLocaleString('ar-DZ');
     $('walletNote').textContent = 'رصيدك محفوظ في قاعدة البيانات ولا يمكن تغييره من المتجر.';
-    $('logout').onclick = async () => { await api('/auth/logout', { method: 'POST', body: '{}' }); location.reload(); };
+    $('logout').onclick = async () => {
+      try { await api('/auth/logout', { method: 'POST', body: '{}' }); location.reload(); }
+      catch { toast('تعذر تسجيل الخروج الآن.', true); }
+    };
   }
 
   function escapeHtml(value) {
@@ -103,8 +106,10 @@
         INVALID_PLAYER_NAME: 'تحقق من اسم اللعبة.',
         INVALID_COUNTRY: 'تحقق من اسم الدولة.',
         INVALID_GAME_ID: 'تحقق من ID اللعبة.',
+        INVALID_PRODUCT_ID: 'تعذر التحقق من الباقة. أعد فتح المتجر.',
         AUTH_REQUIRED: 'انتهت جلسة الدخول. سجّل الدخول مرة أخرى.',
         RATE_LIMITED: 'تم إرسال طلبات كثيرة بسرعة. انتظر قليلًا ثم حاول مرة أخرى.',
+        ORIGIN_REQUIRED: 'أعد فتح المتجر من رابطه الرسمي ثم حاول مرة أخرى.',
         ORIGIN_REJECTED: 'تم رفض الطلب لأسباب أمنية. أعد فتح المتجر من رابطه الرسمي.',
       };
       error.textContent = messages[err.code] || 'تعذر تنفيذ الاستبدال الآن. حاول مرة أخرى.';

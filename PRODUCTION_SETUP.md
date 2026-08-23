@@ -39,10 +39,14 @@ The approved source is `watch` only. The watch-award service is intentionally no
 
 Open `/admin.html` while authenticated with a Kick account whose ID is listed in `ADMIN_KICK_USER_IDS`.
 
-The dashboard is read-only: it shows current balances and recent redemption records, including the player name, country, game ID, points before, and points after.
+The dashboard shows current balances and recent redemption records, including the player name, country, game ID, points before, points after, and delivery status. A pending order can be marked **تم التسليم** by the authorized admin account; that action does not change the user's point balance.
 
 ## 7. Deployment
 
-Run the server from the `server` directory with Node 20+ and `npm start`. The server also serves the repository root as the storefront, so the store and API can share one HTTPS origin.
+**GitHub Pages alone is not sufficient for the production store.** GitHub Pages can serve the static files, but it cannot run the Node/Express API required for Kick OAuth, private sessions, point balances, and atomic redemptions.
+
+The repository now includes `render.yaml` for a production Node web service. The Node service serves both the storefront and the API from the same HTTPS origin. After deployment, use the service's HTTPS URL as `PUBLIC_BASE_URL`, and register the exact `/auth/kick/callback` URL in the Kick developer application.
+
+You must also run `supabase/schema.sql` before accepting real users. Keep all Supabase service-role and Kick client-secret values only in the server's secret environment variables.
 
 Do not deploy this production branch with the old bot service. The bot remains untouched and will be integrated separately after the store is finished.

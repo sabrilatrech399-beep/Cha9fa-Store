@@ -16,7 +16,6 @@ do $$ begin
   create type public.point_source as enum ('watch');
 exception when duplicate_object then null; end $$;
 
--- Keep the existing products primary key and legacy redemptions FK intact.
 alter table public.products add column if not exists diamonds integer;
 alter table public.products add column if not exists image_url text;
 
@@ -82,9 +81,6 @@ create table if not exists public.orders (
   created_at timestamptz not null default now()
 );
 
--- If a previous partial attempt created orders with uuid product_id, stop using
--- that broken shape only when the table is still empty. The live database reported
--- that orders did not exist, so normal installs take the branch above.
 do $$
 begin
   if exists (
@@ -101,10 +97,17 @@ begin
   end if;
 end $$;
 
-alter table public.point_ledger add constraint point_ledger_order_fk
-  foreign key (order_id) references public.orders(id) on delete restrict;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname='point_ledger_order_fk' and conrelid='public.point_ledger'::regclass
+  ) then
+    alter table public.point_ledger add constraint point_ledger_order_fk
+      foreign key (order_id) references public.orders(id) on delete restrict;
+  end if;
+end $$;
 
--- The check is added after orders exists so debit entries can safely reference it.
 alter table public.point_ledger add constraint point_ledger_direction_source_check
   check ((direction='credit' and source='watch') or (direction='debit' and order_id is not null)) not valid;
 alter table public.point_ledger validate constraint point_ledger_direction_source_check;
@@ -133,7 +136,21 @@ create index if not exists orders_user_created_idx on public.orders(store_user_i
 create index if not exists orders_status_idx on public.orders(status);
 create index if not exists watch_events_user_created_idx on public.watch_events(store_user_id, created_at desc);
 
--- Exact approved catalogue.
+-- Repair the existing bigint identity sequence before inserting catalogue rows.
+-- This prevents duplicate-key errors when old rows were inserted manually.
+do $$
+declare
+  v_seq text;
+begin
+  v_seq := pg_get_serial_sequence('public.products','id');
+  if v_seq is not null then
+    execute format(
+      'select setval(%L, greatest(coalesce((select max(id) from public.products), 0) + 1, 1), false)',
+      v_seq
+    );
+  end if;
+end $$;
+
 insert into public.products (name, diamonds, price_points, image_url, active)
 select v.name, v.diamonds, v.price_points, '/images/diamond.png', true
 from (values
@@ -169,16 +186,10 @@ begin
   if p_country is null or char_length(trim(p_country)) not between 2 and 80 then raise exception 'INVALID_COUNTRY'; end if;
   if p_game_id is null or char_length(trim(p_game_id)) not between 2 and 80 then raise exception 'INVALID_GAME_ID'; end if;
 
-  select * into v_product
-  from public.products
-  where id=p_product_id and active=true
-  for update;
+  select * into v_product from public.products where id=p_product_id and active=true for update;
   if not found then raise exception 'PRODUCT_NOT_FOUND'; end if;
 
-  select * into v_user
-  from public.store_users
-  where id=p_store_user_id
-  for update;
+  select * into v_user from public.store_users where id=p_store_user_id for update;
   if not found then raise exception 'USER_NOT_FOUND'; end if;
   if v_user.points < v_product.price_points then raise exception 'INSUFFICIENT_POINTS'; end if;
 
@@ -191,9 +202,7 @@ begin
     v_user.points, v_user.points-v_product.price_points
   ) returning * into v_order;
 
-  update public.store_users
-  set points=points-v_product.price_points, updated_at=now()
-  where id=v_user.id;
+  update public.store_users set points=points-v_product.price_points, updated_at=now() where id=v_user.id;
 
   insert into public.point_ledger(store_user_id,direction,amount,order_id,reason)
   values(v_user.id,'debit',v_product.price_points,v_order.id,'store redemption');
@@ -223,15 +232,10 @@ begin
   if p_event_key is null or char_length(trim(p_event_key)) < 16 or char_length(trim(p_event_key)) > 200 then raise exception 'INVALID_EVENT_KEY'; end if;
   if p_points is null or p_points < 1 or p_points > 1000 then raise exception 'INVALID_POINTS'; end if;
 
-  select * into v_channel
-  from public.watch_channels
-  where channel_slug=lower(trim(p_channel_slug)) and active=true;
+  select * into v_channel from public.watch_channels where channel_slug=lower(trim(p_channel_slug)) and active=true;
   if not found then raise exception 'CHANNEL_NOT_ALLOWED'; end if;
 
-  select * into v_user
-  from public.store_users
-  where kick_user_id=trim(p_kick_user_id)
-  for update;
+  select * into v_user from public.store_users where kick_user_id=trim(p_kick_user_id) for update;
   if not found then raise exception 'USER_NOT_FOUND'; end if;
 
   insert into public.watch_events(event_key,store_user_id,channel_slug,points)
@@ -240,10 +244,7 @@ begin
   get diagnostics v_inserted=row_count;
   if v_inserted=0 then return v_user.points; end if;
 
-  update public.store_users
-  set points=points+p_points,updated_at=now()
-  where id=v_user.id
-  returning * into v_user;
+  update public.store_users set points=points+p_points,updated_at=now() where id=v_user.id returning * into v_user;
 
   insert into public.point_ledger(store_user_id,direction,amount,source,reason)
   values(v_user.id,'credit',p_points,'watch','verified stream watch');
@@ -273,6 +274,5 @@ revoke all on table public.products from anon,authenticated;
 revoke all on table public.watch_channels from anon,authenticated;
 revoke all on table public.watch_events from anon,authenticated;
 
--- Only active catalogue rows are publicly readable; balances and orders stay server-only.
 drop policy if exists products_public_read_active on public.products;
 create policy products_public_read_active on public.products for select using (active=true);

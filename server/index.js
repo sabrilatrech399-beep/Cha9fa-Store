@@ -17,21 +17,18 @@ const OAUTH_COOKIE = 'cha9fa_kick_oauth';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const OAUTH_TTL_SECONDS = 600;
 const COOKIE_SECURE = process.env.COOKIE_SECURE !== 'false';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ? new URL(process.env.PUBLIC_BASE_URL).origin : null;
 const ADMIN_IDS = new Set((process.env.ADMIN_KICK_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean));
+const rateBuckets = new Map();
+const RATE_WINDOW_MS = 60_000;
+const RATE_LIMITS = { auth: 20, orders: 10, admin: 60 };
 
 app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"],
-      baseUri: ["'self'"],
-      objectSrc: ["'none'"],
-      frameAncestors: ["'none'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:'],
-      connectSrc: ["'self'"],
-      formAction: ["'self'"],
+      defaultSrc: ["'self'"], baseUri: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'none'"],
+      scriptSrc: ["'self'"], styleSrc: ["'self'"], imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"], formAction: ["'self'"],
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -61,7 +58,7 @@ function verifySignedValue(value) {
 function parseCookies(header = '') {
   return Object.fromEntries(header.split(';').map(p => p.trim()).filter(Boolean).map(p => {
     const i = p.indexOf('=');
-    return i < 0 ? [p, ''] : [decodeURIComponent(p.slice(0, i)), decodeURIComponent(p.slice(i + 1))];
+    return i < 0 ? [p, ''] : [decodeURIComponent(p.slice(0, i)), decodeURIComponent(p.slice(i + 1)];
   }));
 }
 
@@ -77,6 +74,38 @@ function setCookie(res, name, value, maxAge) {
 function clearCookie(res, name) {
   const secure = COOKIE_SECURE ? '; Secure' : '';
   appendCookie(res, `${name}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`);
+}
+
+function clientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.socket.remoteAddress || 'unknown';
+}
+function rateLimit(bucket, limit) {
+  return (req, res, next) => {
+    const key = `${bucket}:${clientIp(req)}`;
+    const now = Date.now();
+    let item = rateBuckets.get(key);
+    if (!item || item.resetAt <= now) item = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    item.count += 1; rateBuckets.set(key, item);
+    if (item.count > limit) {
+      res.setHeader('Retry-After', Math.ceil((item.resetAt - now) / 1000));
+      return res.status(429).json({ error: 'RATE_LIMITED' });
+    }
+    next();
+  };
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, item] of rateBuckets) if (item.resetAt <= now) rateBuckets.delete(key);
+}, RATE_WINDOW_MS).unref();
+
+function requireSameOrigin(req, res, next) {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  let expected;
+  try { expected = PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`; } catch { return res.status(403).json({ error: 'ORIGIN_REJECTED' }); }
+  if (origin !== expected) return res.status(403).json({ error: 'ORIGIN_REJECTED' });
+  next();
 }
 
 async function getSession(req) {
@@ -122,7 +151,7 @@ async function kickUser(accessToken) {
 
 app.get('/health', (_req,res) => res.json({ ok:true }));
 
-app.get('/auth/kick', (_req,res) => {
+app.get('/auth/kick', rateLimit('auth', RATE_LIMITS.auth), (_req,res) => {
   const state = randomToken(32), verifier = randomToken(48);
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
   setCookie(res, OAUTH_COOKIE, signedValue({ state, verifier, exp: Date.now() + OAUTH_TTL_SECONDS * 1000 }), OAUTH_TTL_SECONDS);
@@ -131,7 +160,7 @@ app.get('/auth/kick', (_req,res) => {
   res.redirect(url.toString());
 });
 
-app.get('/auth/kick/callback', async (req,res) => {
+app.get('/auth/kick/callback', rateLimit('auth', RATE_LIMITS.auth), async (req,res) => {
   try {
     const oauth = verifySignedValue(parseCookies(req.headers.cookie)[OAUTH_COOKIE]);
     clearCookie(res,OAUTH_COOKIE);
@@ -150,7 +179,7 @@ app.get('/auth/kick/callback', async (req,res) => {
   } catch (error) { console.error(error); res.status(502).send('تعذر تسجيل الدخول بواسطة Kick. حاول مرة أخرى.'); }
 });
 
-app.post('/auth/logout', async (req,res) => {
+app.post('/auth/logout', requireSameOrigin, rateLimit('auth', RATE_LIMITS.auth), async (req,res) => {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (token) await supabase.from('auth_sessions').delete().eq('token_hash',sha256(token));
   clearCookie(res,SESSION_COOKIE); res.json({ ok:true });
@@ -168,9 +197,10 @@ app.get('/api/products', async (_req,res) => {
   res.json({ products:data });
 });
 
-app.post('/api/orders', requireSession, async (req,res) => {
+app.post('/api/orders', requireSameOrigin, rateLimit('orders', RATE_LIMITS.orders), requireSession, async (req,res) => {
   const { productId,playerName,country,gameId } = req.body || {};
-  if ([productId,playerName,country,gameId].some(v => typeof v !== 'string')) return res.status(400).json({ error:'INVALID_REQUEST' });
+  if (![productId,playerName,country,gameId].every(v => typeof v === 'string')) return res.status(400).json({ error:'INVALID_REQUEST' });
+  if (productId.length > 100 || playerName.length > 100 || country.length > 80 || gameId.length > 80) return res.status(400).json({ error:'INVALID_REQUEST' });
   const { data,error } = await supabase.rpc('spend_points_for_order',{ p_store_user_id:req.auth.user.id,p_product_id:productId,p_player_name:playerName.trim(),p_country:country.trim(),p_game_id:gameId.trim() });
   if (error) {
     const message=String(error.message||'');
@@ -191,7 +221,7 @@ app.get('/api/admin/overview', requireAdmin, async (_req,res) => {
   res.json({users,orders});
 });
 
-app.post('/api/admin/orders/:orderId/complete', requireAdmin, async (req,res) => {
+app.post('/api/admin/orders/:orderId/complete', requireSameOrigin, rateLimit('admin', RATE_LIMITS.admin), requireAdmin, async (req,res) => {
   const orderId = String(req.params.orderId || '');
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) return res.status(400).json({ error:'INVALID_ORDER_ID' });
   const { data,error } = await supabase.from('orders').update({ status:'completed' }).eq('id',orderId).eq('status','pending').select('id,status').maybeSingle();

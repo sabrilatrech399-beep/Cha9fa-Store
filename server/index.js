@@ -50,13 +50,18 @@ function parseCookies(header = '') {
   }));
 }
 
+function appendCookie(res, cookie) {
+  const existing = res.getHeader('Set-Cookie');
+  const values = existing ? (Array.isArray(existing) ? existing : [existing]) : [];
+  res.setHeader('Set-Cookie', [...values, cookie]);
+}
 function setCookie(res, name, value, maxAge) {
   const secure = COOKIE_SECURE ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; HttpOnly${secure}; SameSite=Lax`);
+  appendCookie(res, `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; HttpOnly${secure}; SameSite=Lax`);
 }
 function clearCookie(res, name) {
   const secure = COOKIE_SECURE ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${name}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`);
+  appendCookie(res, `${name}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`);
 }
 
 async function getSession(req) {

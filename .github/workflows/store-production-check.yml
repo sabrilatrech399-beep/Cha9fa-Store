@@ -25,4 +25,4 @@ jobs:
         run: node --check admin-app.js
       - name: Ensure common secret formats are not committed
         run: |
-          ! grep -RInE 'sb_(secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]{20,}' --exclude-dir=.git .
+          ! grep -RInE 'sb_(secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]{20,}' --exclude-dir=.git --exclude-dir=node_modules .

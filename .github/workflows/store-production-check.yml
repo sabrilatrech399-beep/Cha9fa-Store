@@ -1,0 +1,23 @@
+name: Store production checks
+
+on:
+  push:
+    branches: [store-production-build]
+  pull_request:
+    branches: [store-production-build]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check server syntax
+        run: node --check server/index.js
+      - name: Check storefront client syntax
+        run: node --check store-app.js
+      - name: Ensure no obvious secret assignments are committed
+        run: |
+          ! grep -RInE 'SUPABASE_(SERVICE_ROLE|SECRET)_KEY\s*=\s*[^D$[:space:]]|KICK_CLIENT_SECRET\s*=\s*[^[:space:]]' --exclude-dir=.git .

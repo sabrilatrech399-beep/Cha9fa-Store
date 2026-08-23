@@ -201,7 +201,7 @@ app.get('/api/products', async (_req,res) => {
 app.post('/api/orders', requireSameOrigin, rateLimit('orders', RATE_LIMITS.orders), requireSession, async (req,res) => {
   const { productId,playerName,country,gameId } = req.body || {};
   if (![productId,playerName,country,gameId].every(v => typeof v === 'string')) return res.status(400).json({ error:'INVALID_REQUEST' });
-  if (!/^[0-9a-f]{8}-[0-9a-f-]{27,27}$/i.test(productId) || productId.length !== 36) return res.status(400).json({ error:'INVALID_PRODUCT_ID' });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId)) return res.status(400).json({ error:'INVALID_PRODUCT_ID' });
   if (playerName.trim().length < 2 || playerName.trim().length > 100 || country.trim().length < 2 || country.trim().length > 80 || gameId.trim().length < 2 || gameId.trim().length > 80) return res.status(400).json({ error:'INVALID_REQUEST' });
   const { data,error } = await supabase.rpc('spend_points_for_order',{ p_store_user_id:req.auth.user.id,p_product_id:productId,p_player_name:playerName.trim(),p_country:country.trim(),p_game_id:gameId.trim() });
   if (error) {
@@ -225,7 +225,7 @@ app.get('/api/admin/overview', requireAdmin, async (_req,res) => {
 
 app.post('/api/admin/orders/:orderId/complete', requireSameOrigin, rateLimit('admin', RATE_LIMITS.admin), requireAdmin, async (req,res) => {
   const orderId = String(req.params.orderId || '');
-  if (!/^[0-9a-f-]{36}$/i.test(orderId)) return res.status(400).json({ error:'INVALID_ORDER_ID' });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) return res.status(400).json({ error:'INVALID_ORDER_ID' });
   const { data,error } = await supabase.from('orders').update({ status:'completed' }).eq('id',orderId).eq('status','pending').select('id,status').maybeSingle();
   if (error) return res.status(500).json({ error:'ORDER_UPDATE_FAILED' });
   if (!data) return res.status(409).json({ error:'ORDER_NOT_PENDING' });

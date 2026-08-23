@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: cha9fa-store
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: KICK_CLIENT_ID
+        sync: false
+      - key: KICK_CLIENT_SECRET
+        sync: false
+      - key: KICK_REDIRECT_URI
+        sync: false
+      - key: KICK_CHANNEL_SLUG
+        sync: false
+      - key: ADMIN_KICK_USER_IDS
+        sync: false

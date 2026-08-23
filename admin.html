@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cha9fa Store — لوحة التحكم</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header class="topbar"><a class="brand" href="./">Cha9fa <span>Store</span></a><a class="logout" href="./">العودة للمتجر</a></header>
+<main class="section">
+  <span class="eyebrow">Admin</span><h1>لوحة التحكم</h1>
+  <p class="wallet-note">الأرقام هنا تُقرأ من قاعدة البيانات مباشرة. لوحة التحكم لا تملك أي زر لتعديل رصيد المشاهد يدويًا.</p>
+  <div id="adminError" class="form-error" hidden></div>
+  <div class="products-grid" id="adminStats"></div>
+  <section class="section"><h2>أرصدة المشاهدين</h2><div id="usersTable"></div></section>
+  <section class="section"><h2>آخر الطلبات</h2><div id="ordersTable"></div></section>
+  <section class="section"><h2>سجل النقاط</h2><p class="wallet-note">هذا سجل تدقيق للخصم والإضافة. لا توجد هنا صلاحية لإنشاء نقاط.</p><div id="ledgerTable"></div></section>
+  <section class="section"><h2>أحداث المشاهدة</h2><p class="wallet-note">تظهر هنا فقط أحداث المشاهدة التي سجلها مسار الخادم المخصص للمشاهدة.</p><div id="watchTable"></div></section>
+</main>
+<script src="admin-app.js" defer></script>
+</body>
+</html>

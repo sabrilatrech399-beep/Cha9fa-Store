@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cha9fa Store — لوحة التحكم</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header class="topbar"><a class="brand" href="./">Cha9fa <span>Store</span></a><a class="logout" href="./">العودة للمتجر</a></header>
+<main class="section">
+  <span class="eyebrow">Admin</span><h1>لوحة التحكم</h1>
+  <p class="wallet-note">الأرقام هنا تُقرأ من قاعدة البيانات مباشرة. هذه الصفحة لا تمنح أي صلاحية لتعديل نقاط المشاهدين.</p>
+  <div id="adminError" class="form-error" hidden></div>
+  <div class="products-grid" id="adminStats"></div>
+  <section class="section"><h2>أرصدة المشاهدين</h2><div id="usersTable"></div></section>
+  <section class="section"><h2>آخر الطلبات</h2><div id="ordersTable"></div></section>
+</main>
+<script>
+const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const money=n=>Number(n||0).toLocaleString('ar-DZ');
+async function load(){
+ const r=await fetch('/api/admin/overview',{credentials:'include'}); const d=await r.json();
+ if(!r.ok){throw new Error(d.error||'ADMIN_ERROR')}
+ const users=d.users||[],orders=d.orders||[];
+ document.getElementById('adminStats').innerHTML=`<article class="card"><h3>المشاهدون</h3><strong>${users.length}</strong></article><article class="card"><h3>الطلبات</h3><strong>${orders.length}</strong></article><article class="card"><h3>إجمالي النقاط الحالية</h3><strong>${money(users.reduce((s,u)=>s+Number(u.points||0),0))}</strong></article>`;
+ document.getElementById('usersTable').innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kick ID</th><th>اسم Kick</th><th>النقاط</th><th>آخر تحديث</th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.kick_user_id)}</td><td>${esc(u.kick_username)}</td><td><b>${money(u.points)}</b></td><td>${new Date(u.updated_at).toLocaleString('ar-DZ')}</td></tr>`).join('')}</tbody></table></div>`;
+ document.getElementById('ordersTable').innerHTML=`<div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>الجواهر</th><th>النقاط</th><th>اسم اللعبة</th><th>الدولة</th><th>ID اللعبة</th><th>قبل</th><th>بعد</th><th>الحالة</th></tr></thead><tbody>${orders.map(o=>`<tr><td>${new Date(o.created_at).toLocaleString('ar-DZ')}</td><td>${money(o.diamonds)}</td><td>${money(o.price_points)}</td><td>${esc(o.player_name)}</td><td>${esc(o.country)}</td><td>${esc(o.game_id)}</td><td>${money(o.points_before)}</td><td>${money(o.points_after)}</td><td>${esc(o.status)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+load().catch(e=>{const el=document.getElementById('adminError');el.hidden=false;el.textContent=e.message==='ADMIN_REQUIRED'?'هذه الصفحة مخصصة لصاحب المتجر فقط.':'تعذر تحميل لوحة التحكم.'});
+</script>
+</body></html>

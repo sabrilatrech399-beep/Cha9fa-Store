@@ -58,7 +58,7 @@ function verifySignedValue(value) {
 function parseCookies(header = '') {
   return Object.fromEntries(header.split(';').map(p => p.trim()).filter(Boolean).map(p => {
     const i = p.indexOf('=');
-    return i < 0 ? [p, ''] : [decodeURIComponent(p.slice(0, i)), decodeURIComponent(p.slice(i + 1)];
+    return i < 0 ? [p, ''] : [decodeURIComponent(p.slice(0, i)), decodeURIComponent(p.slice(i + 1))];
   }));
 }
 

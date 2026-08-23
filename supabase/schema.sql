@@ -17,6 +17,14 @@ create table public.store_users (
   updated_at timestamptz not null default now()
 );
 
+create table public.auth_sessions (
+  id uuid primary key default gen_random_uuid(),
+  store_user_id uuid not null references public.store_users(id) on delete cascade,
+  token_hash text not null unique,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
 create table public.products (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -59,19 +67,27 @@ alter table public.point_ledger
   foreign key (order_id) references public.orders(id) on delete restrict;
 
 create index store_users_kick_user_id_idx on public.store_users(kick_user_id);
+create index auth_sessions_token_hash_idx on public.auth_sessions(token_hash);
+create index auth_sessions_expiry_idx on public.auth_sessions(expires_at);
 create index point_ledger_user_created_idx on public.point_ledger(store_user_id, created_at desc);
 create index orders_user_created_idx on public.orders(store_user_id, created_at desc);
 create index orders_status_idx on public.orders(status);
 
 insert into public.products (name, diamonds, price_points)
-values
+select v.name, v.diamonds, v.price_points
+from (values
   ('100 جوهرة', 100, 300),
   ('300 جوهرة', 300, 900),
   ('500 جوهرة', 500, 1500),
   ('1000 جوهرة', 1000, 3000),
-  ('5000 جوهرة', 5000, 15000);
+  ('5000 جوهرة', 5000, 15000)
+) as v(name, diamonds, price_points)
+where not exists (
+  select 1 from public.products p where p.diamonds = v.diamonds and p.price_points = v.price_points
+);
 
 alter table public.store_users enable row level security;
+alter table public.auth_sessions enable row level security;
 alter table public.products enable row level security;
 alter table public.point_ledger enable row level security;
 alter table public.orders enable row level security;

@@ -36,11 +36,7 @@ create table public.point_ledger (
   order_id uuid,
   reason text not null,
   created_at timestamptz not null default now(),
-  check (
-    (direction = 'credit' and source = 'watch')
-    or
-    (direction = 'debit' and order_id is not null)
-  )
+  check ((direction = 'credit' and source = 'watch') or (direction = 'debit' and order_id is not null))
 );
 
 create table public.orders (
@@ -75,7 +71,6 @@ values
   ('1000 جوهرة', 1000, 3000),
   ('5000 جوهرة', 5000, 15000);
 
--- No browser client may directly modify balances or the ledger.
 alter table public.store_users enable row level security;
 alter table public.products enable row level security;
 alter table public.point_ledger enable row level security;
@@ -84,9 +79,6 @@ alter table public.orders enable row level security;
 create policy "products_public_read_active"
 on public.products for select
 using (active = true);
-
--- The browser does not receive direct read/write access to user balances,
--- ledger entries, or orders. Server-side code uses the private service role.
 
 create or replace function public.spend_points_for_order(
   p_store_user_id uuid,
@@ -105,42 +97,20 @@ declare
   v_product public.products%rowtype;
   v_order public.orders%rowtype;
 begin
-  if p_player_name is null or char_length(trim(p_player_name)) not between 2 and 100 then
-    raise exception 'INVALID_PLAYER_NAME';
-  end if;
-  if p_country is null or char_length(trim(p_country)) not between 2 and 80 then
-    raise exception 'INVALID_COUNTRY';
-  end if;
-  if p_game_id is null or char_length(trim(p_game_id)) not between 2 and 80 then
-    raise exception 'INVALID_GAME_ID';
-  end if;
+  if p_player_name is null or char_length(trim(p_player_name)) not between 2 and 100 then raise exception 'INVALID_PLAYER_NAME'; end if;
+  if p_country is null or char_length(trim(p_country)) not between 2 and 80 then raise exception 'INVALID_COUNTRY'; end if;
+  if p_game_id is null or char_length(trim(p_game_id)) not between 2 and 80 then raise exception 'INVALID_GAME_ID'; end if;
 
-  select * into v_product
-  from public.products
-  where id = p_product_id and active = true
-  for update;
+  select * into v_product from public.products where id = p_product_id and active = true for update;
+  if not found then raise exception 'PRODUCT_NOT_FOUND'; end if;
 
-  if not found then
-    raise exception 'PRODUCT_NOT_FOUND';
-  end if;
-
-  select * into v_user
-  from public.store_users
-  where id = p_store_user_id
-  for update;
-
-  if not found then
-    raise exception 'USER_NOT_FOUND';
-  end if;
-
-  if v_user.points < v_product.price_points then
-    raise exception 'INSUFFICIENT_POINTS';
-  end if;
+  select * into v_user from public.store_users where id = p_store_user_id for update;
+  if not found then raise exception 'USER_NOT_FOUND'; end if;
+  if v_user.points < v_product.price_points then raise exception 'INSUFFICIENT_POINTS'; end if;
 
   insert into public.orders (
     store_user_id, product_id, diamonds, price_points,
-    player_name, country, game_id,
-    points_before, points_after
+    player_name, country, game_id, points_before, points_after
   ) values (
     v_user.id, v_product.id, v_product.diamonds, v_product.price_points,
     trim(p_player_name), trim(p_country), trim(p_game_id),
@@ -148,23 +118,18 @@ begin
   ) returning * into v_order;
 
   update public.store_users
-  set points = points - v_product.price_points,
-      updated_at = now()
+  set points = points - v_product.price_points, updated_at = now()
   where id = v_user.id;
 
-  insert into public.point_ledger (
-    store_user_id, direction, amount, order_id, reason
-  ) values (
-    v_user.id, 'debit', v_product.price_points, v_order.id,
-    'store redemption'
-  );
+  insert into public.point_ledger (store_user_id, direction, amount, order_id, reason)
+  values (v_user.id, 'debit', v_product.price_points, v_order.id, 'store redemption');
 
   return v_order;
 end;
 $$;
 
-revoke all on function public.spend_points_for_order(uuid, uuid, text, text, text) from public;
+revoke all on function public.spend_points_for_order(uuid, uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.spend_points_for_order(uuid, uuid, text, text, text) to service_role;
 
--- Only the server-side service role should execute the spending RPC.
--- Point credits will be added later by the watch-time service after Kick
--- attendance is verified; there is intentionally no public credit function.
+-- There is intentionally no public function that can credit points.
+-- The future watch service will credit only verified watch-time events.

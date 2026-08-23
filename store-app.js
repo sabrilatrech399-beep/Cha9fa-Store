@@ -104,6 +104,8 @@
         INVALID_COUNTRY: 'تحقق من اسم الدولة.',
         INVALID_GAME_ID: 'تحقق من ID اللعبة.',
         AUTH_REQUIRED: 'انتهت جلسة الدخول. سجّل الدخول مرة أخرى.',
+        RATE_LIMITED: 'تم إرسال طلبات كثيرة بسرعة. انتظر قليلًا ثم حاول مرة أخرى.',
+        ORIGIN_REJECTED: 'تم رفض الطلب لأسباب أمنية. أعد فتح المتجر من رابطه الرسمي.',
       };
       error.textContent = messages[err.code] || 'تعذر تنفيذ الاستبدال الآن. حاول مرة أخرى.';
       error.hidden = false;

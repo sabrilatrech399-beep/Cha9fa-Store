@@ -1,0 +1,9 @@
+{
+  "products": [
+    {"id":"diamonds-100","name":"100 جوهرة","diamonds":100,"pricePoints":300},
+    {"id":"diamonds-300","name":"300 جوهرة","diamonds":300,"pricePoints":900},
+    {"id":"diamonds-500","name":"500 جوهرة","diamonds":500,"pricePoints":1500},
+    {"id":"diamonds-1000","name":"1000 جوهرة","diamonds":1000,"pricePoints":3000},
+    {"id":"diamonds-5000","name":"5000 جوهرة","diamonds":5000,"pricePoints":15000}
+  ]
+}

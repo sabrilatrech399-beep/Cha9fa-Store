@@ -38,8 +38,32 @@
       <p class="modal-price" id="modalPrice">—</p>
       <form id="orderForm">
         <label>اسمك في اللعبة<input name="playerName" maxlength="100" required autocomplete="name"></label>
-        <label>الدولة<input name="country" maxlength="80" required autocomplete="country-name"></label>
-        <label>ID اللعبة<input name="gameId" maxlength="80" required inputmode="text"></label>
+        <label>الدولة
+          <select name="country" required autocomplete="country-name">
+            <option value="" selected disabled>اختر دولتك</option>
+            <option>الجزائر</option>
+            <option>المغرب</option>
+            <option>تونس</option>
+            <option>ليبيا</option>
+            <option>موريتانيا</option>
+            <option>مصر</option>
+            <option>السعودية</option>
+            <option>الإمارات</option>
+            <option>قطر</option>
+            <option>الكويت</option>
+            <option>العراق</option>
+            <option>الأردن</option>
+            <option>فلسطين</option>
+            <option>عُمان</option>
+            <option>البحرين</option>
+            <option>اليمن</option>
+            <option>سوريا</option>
+            <option>لبنان</option>
+            <option>السودان</option>
+            <option>أخرى</option>
+          </select>
+        </label>
+        <label>ID اللعبة<input name="gameId" maxlength="80" required inputmode="numeric" autocomplete="off"></label>
         <button class="submit" type="submit" id="submitOrder">تأكيد الاستبدال</button>
       </form>
       <p class="form-error" id="formError" hidden></p>

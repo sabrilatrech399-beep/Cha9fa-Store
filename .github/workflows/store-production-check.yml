@@ -21,6 +21,8 @@ jobs:
         run: node --check server/index.js
       - name: Check storefront client syntax
         run: node --check store-app.js
+      - name: Check admin client syntax
+        run: node --check admin-app.js
       - name: Ensure common secret formats are not committed
         run: |
           ! grep -RInE 'sb_(secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]{20,}' --exclude-dir=.git .

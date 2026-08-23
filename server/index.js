@@ -101,7 +101,7 @@ setInterval(() => {
 
 function requireSameOrigin(req, res, next) {
   const origin = req.headers.origin;
-  if (!origin) return next();
+  if (!origin) return res.status(403).json({ error: 'ORIGIN_REQUIRED' });
   let expected;
   try { expected = PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`; } catch { return res.status(403).json({ error: 'ORIGIN_REJECTED' }); }
   if (origin !== expected) return res.status(403).json({ error: 'ORIGIN_REJECTED' });
@@ -173,6 +173,7 @@ app.get('/auth/kick/callback', rateLimit('auth', RATE_LIMITS.auth), async (req,r
     const { data:user, error:userError } = await supabase.from('store_users').upsert({ kick_user_id:kickUserData.id, kick_username:kickUserData.username }, { onConflict:'kick_user_id' }).select('id,kick_user_id,kick_username,points').single();
     if (userError) throw userError;
     const sessionToken = randomToken(48);
+    await supabase.from('auth_sessions').delete().eq('store_user_id', user.id);
     const { error:sessionError } = await supabase.from('auth_sessions').insert({ store_user_id:user.id, token_hash:sha256(sessionToken), expires_at:new Date(Date.now()+SESSION_TTL_SECONDS*1000).toISOString() });
     if (sessionError) throw sessionError;
     setCookie(res,SESSION_COOKIE,sessionToken,SESSION_TTL_SECONDS); res.redirect('/');
@@ -200,7 +201,8 @@ app.get('/api/products', async (_req,res) => {
 app.post('/api/orders', requireSameOrigin, rateLimit('orders', RATE_LIMITS.orders), requireSession, async (req,res) => {
   const { productId,playerName,country,gameId } = req.body || {};
   if (![productId,playerName,country,gameId].every(v => typeof v === 'string')) return res.status(400).json({ error:'INVALID_REQUEST' });
-  if (productId.length > 100 || playerName.length > 100 || country.length > 80 || gameId.length > 80) return res.status(400).json({ error:'INVALID_REQUEST' });
+  if (!/^[0-9a-f]{8}-[0-9a-f-]{27,27}$/i.test(productId) || productId.length !== 36) return res.status(400).json({ error:'INVALID_PRODUCT_ID' });
+  if (playerName.trim().length < 2 || playerName.trim().length > 100 || country.trim().length < 2 || country.trim().length > 80 || gameId.trim().length < 2 || gameId.trim().length > 80) return res.status(400).json({ error:'INVALID_REQUEST' });
   const { data,error } = await supabase.rpc('spend_points_for_order',{ p_store_user_id:req.auth.user.id,p_product_id:productId,p_player_name:playerName.trim(),p_country:country.trim(),p_game_id:gameId.trim() });
   if (error) {
     const message=String(error.message||'');

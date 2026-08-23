@@ -18,6 +18,6 @@ jobs:
         run: node --check server/index.js
       - name: Check storefront client syntax
         run: node --check store-app.js
-      - name: Ensure no obvious secret assignments are committed
+      - name: Ensure common secret formats are not committed
         run: |
-          ! grep -RInE 'SUPABASE_(SERVICE_ROLE|SECRET)_KEY\s*=\s*[^D$[:space:]]|KICK_CLIENT_SECRET\s*=\s*[^[:space:]]' --exclude-dir=.git .
+          ! grep -RInE 'sb_(secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]{20,}' --exclude-dir=.git .

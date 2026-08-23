@@ -29,3 +29,13 @@ services:
         sync: false
       - key: ADMIN_KICK_USER_IDS
         sync: false
+      - key: WATCH_INGEST_SECRET
+        sync: false
+      - key: WATCH_CHANNEL_USER_ID
+        sync: false
+      - key: WATCH_CHANNEL_SLUG
+        sync: false
+      - key: WATCH_POINTS_PER_MINUTE
+        value: "0"
+      - key: WATCH_MAX_MINUTES_PER_EVENT
+        value: "10"

@@ -2,9 +2,9 @@ services:
   - type: web
     name: cha9fa-store
     runtime: node
-    rootDir: server
-    buildCommand: npm ci
-    startCommand: npm start
+    branch: store-production-build
+    buildCommand: npm install --prefix server --no-audit --no-fund
+    startCommand: node server/index.js
     healthCheckPath: /health
     envVars:
       - key: PORT
